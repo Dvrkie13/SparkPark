@@ -1,29 +1,141 @@
 # PokePark Wiicompiled
 
-A native Windows port of *PokePark Wii: Pikachu's Adventure* (USA, R8AE01),
-made by statically recompiling the game's PowerPC code into C. It renders
-with Vulkan or OpenGL, plays at higher frame rates and resolutions, and
-supports keyboard, mouse and Xbox-style controllers.
+A native Windows port of *PokePark Wii: Pikachu's Adventure* (USA, R8AE01).
+The game's PowerPC code is statically recompiled into C and runs natively,
+with the Wii's hardware replaced underneath it. There is no emulator: the
+game's own code runs, drawing with Vulkan or OpenGL at high resolutions and
+frame rates, played with a keyboard and mouse or a controller.
 
 **This repository contains no game data.** You need your own copy of the
-game: the program reads your disc image the first time it runs.
+game. The program reads your disc image the first time it runs.
 
-The project is in **open beta**. Please report problems in
-[Issues](../../issues): say what you did and what happened, attach a
-screenshot if you can, and give your Windows version, graphics card and
-Renderer setting (Options > Display).
+> **Open beta.** Please report problems in [Issues](../../issues). Say what
+> you did and what happened, attach a screenshot if you can, and give your
+> Windows version, graphics card and Renderer setting (Options > Display).
 
 ## Playing
 
-Download the latest build from [Releases](../../releases), unzip it and
-run `PokePark.exe`. The included `README.txt` has the details.
+1. Download the latest build from [Releases](../../releases) and unzip it.
+2. Run `PokePark.exe`.
+3. The first time, choose your disc image (ISO, RVZ, WBFS, WIA, CISO and
+   the like). The game is set up in an `R8AE01` folder beside the program,
+   and your saves are kept in `R8AE01\nand`.
+
+Keep the `prompts` and `tools` folders beside `PokePark.exe`.
+
+**Requirements:** Windows 10 or 11 (64-bit) and a graphics card with
+Vulkan 1.3 or OpenGL 3.3.
+
+## Improvements over the Wii version
+
+### Graphics
+
+- **Widescreen.** The game runs in its native 16:9 mode, with its
+  widescreen pictures and layouts, at full horizontal resolution rather
+  than squeezed for a TV to stretch.
+- **High resolution.** Renders at 1x to 6x the Wii's resolution, or to
+  fit the window. 3x is pixel for pixel on a 1440p display.
+- **High frame rates.** 30 fps (the game's own), 60 fps, or 120, 144,
+  165 or 240 fps. Above 60, extra frames are interpolated between the
+  game's, with every object, camera and light moving smoothly. The game
+  still updates 60 times a second, so nothing speeds up.
+- **Anti-aliasing.** 2x, 4x or 8x MSAA.
+- **Anisotropic filtering.** 2x to 16x, for sharp ground and walls at
+  an angle.
+- **Field of view.** 80% to 150% of the game's, in the park.
+- **Vulkan and OpenGL renderers.** Vulkan is the default and the
+  fastest. It falls back to OpenGL if Vulkan can't start.
+- **Fullscreen** (borderless) or windowed, toggled with Alt+Enter.
+
+### Controls
+
+- **Keyboard and mouse**, with a **mouse-controlled camera** that turns
+  and tilts the player camera, even while running.
+- **Xbox-style controllers**, with rumble (off, light, normal or strong).
+- **Fully rebindable.** Each Wii Remote button has two keyboard or mouse
+  slots and two controller slots.
+- **Button prompts match your device.** The game's on-screen Wii Remote
+  icons are redrawn as the key or button they're bound to, switching
+  between keyboard and controller as you use them.
+- **Motion controls mapped.** The minigames' shaking, tilting, swinging
+  and pointing are mapped to keys, the mouse and the sticks.
+- Camera speed and inverted camera settings.
+
+### Gameplay options
+
+Optional changes to the game's balance, all off (100%) by default:
+
+| Setting | Choices |
+|---|---|
+| Text speed | 1x (the game's), 2x, 3x, or a page at once |
+| Berries collected | 50% to 300% |
+| Prices | free, 50%, 100% or 200% |
+| Damage dealt | 50% to 300% |
+| Damage taken | none, 50% to 300% |
+| Chase speed | 50% to 150% of the speed of the Pokémon you chase |
+
+### Quality of life
+
+- **Faster start-up.** The title screen comes up about 7 s after launch
+  instead of about 28 s.
+- **An in-game Options menu.** It's in the PokéPark Pad (pause menu) and
+  on the save files screen, in the game's own style. Changes apply
+  immediately and are saved in `settings.ini`.
+- Runs at 60 Hz to match PC displays (the Wii runs at 59.94 Hz).
+
+## Default controls
+
+| Wii Remote | In the park | Keyboard and mouse | Controller |
+|---|---|---|---|
+| D-pad | Move | WASD / arrow keys | D-pad / left stick |
+| 2 | Jump, talk | Space / X | A |
+| 1 | Dash | Left click / Z | X |
+| A | Thunderbolt | Right click / Enter | B |
+| B | Recenter camera | V / Left Ctrl | Y / right trigger |
+| | Turn camera | Mouse | |
+| + | PokéPark Pad | P | Start |
+| - | Map | M | Back |
+| HOME | | Home / H | Right stick click |
+| Shake | Iron Tail | Q / Left Shift (hold) | LB (hold) |
+| Shake (minigames) | Running, swinging | Q and E by turns | LB and RB by turns |
+
+While the window has focus, the mouse is captured for the camera. Esc
+releases it, and a click captures it again.
+
+<details>
+<summary>Minigame controls</summary>
+
+| Minigame | Keyboard and mouse | Controller |
+|---|---|---|
+| Absol's Hurdle Bounce, Bulbasaur's Daring Dash, Dusknoir's Speed Slam | Run: Q and E by turns | LB and RB by turns |
+| Venusaur's Vine Swing, Tangrowth's Swing-Along | Swing: Q and E by turns, in time. Jump: Space | LB and RB. A |
+| Blaziken's Boulder Bash | Swing: left click or Space. Recover: Q and E by turns | X or A. LB and RB |
+| Gyarados' Aqua Dash, Empoleon's Snow Slide | Steer: A / D | Left stick |
+| Pelipper's Circle Circuit, Salamence's Air Race, Rhyperior's Bumper Burn | Steer: A / D. Climb and dive: W / S | Left stick |
+| Rayquaza's Balloon Panic | As flying, then aim with the mouse | Left stick, then right stick |
+| Rotom's Spooky Shoot-'em-Up | Aim: mouse | Right stick |
+| Bastiodon's Panel Crush | Buttons, as on the Wii | Buttons |
+
+</details>
+
+## Known gaps
+
+- **Graphics:** fog, indirect texturing,
+  dynamic lighting, logic ops, z-textures, and lines and points aren't
+  drawn yet.
+- **Sound:** no reverb or other effects, and the Wii Remote speaker is
+  silent.
+- **Input:** no Wii Remote pointer or Nunchuk. The game is played
+  sideways, so neither is needed for the main game.
+- Windows only for now. It has been tested on one PC, so problems on
+  other hardware are likely: please report them.
 
 ## Building
 
 Needs Windows 10 or 11, Visual Studio 2022 (C++ desktop workload),
 Python 3 and, for the Vulkan renderer, the
-[Vulkan SDK](https://vulkan.lunarg.com/) (without it, only OpenGL is
-built).
+[Vulkan SDK](https://vulkan.lunarg.com/). Without the SDK, only OpenGL is
+built.
 
 1. Get [decomp-toolkit](https://github.com/encounter/decomp-toolkit/releases)
    v1.6.2 and put it at `build/tools/dtk.exe`.
@@ -39,10 +151,11 @@ built).
    ```
    `--public` puts a release build in `Releases/`. Without it you get a
    development build at `build/recomp/boot.exe`, which also has a debug
-   settings menu (Backspace, or Back+Start on a controller).
+   settings menu (Backspace, or Back+Start on a controller) that can start
+   any minigame.
 
-How it works, the settings, and the environment variables for testing
-are described in [recomp/README.md](recomp/README.md).
+How it works, and the environment variables for testing, are described
+in [recomp/README.md](recomp/README.md).
 
 ## Credits
 
