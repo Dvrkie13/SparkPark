@@ -1,0 +1,14 @@
+# Your copy of the game and everything built from it
+orig/
+build/
+Releases/
+*.dol
+*.iso
+*.rvz
+*.wbfs
+settings.ini
+
+# Caches
+__pycache__/
+.vs/
+.vscode/
