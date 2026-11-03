@@ -41,7 +41,7 @@ Vulkan 1.3 or OpenGL 3.3.
 
 Play with the touch controls drawn over the game (a stick on the left,
 the buttons on the right, drag elsewhere to turn the camera) or a
-controller. Settings are in Options, in the Pok�Park Pad.
+controller. Settings are in Options, in the PokéPark Pad.
 
 **Requirements:** Android 11 or later on a 64-bit (arm64) phone with
 Vulkan 1.3. Tested on one phone (Adreno 830 GPU) so far.
@@ -101,6 +101,10 @@ Optional changes to the game's balance, all off (100%) by default:
 - **An in-game Options menu.** It's in the PokéPark Pad (pause menu) and
   on the save files screen, in the game's own style. Changes apply
   immediately and are saved in `settings.ini`.
+- **Update check.** At start it asks GitHub whether a newer release is
+  out. If one is, the save files screen says so, and Options > Display >
+  Updates opens its download page. Nothing is downloaded by itself, and
+  the Updates setting turns the check off.
 - Runs at 60 Hz to match PC displays (the Wii runs at 59.94 Hz).
 
 ## Default controls
