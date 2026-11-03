@@ -1,19 +1,22 @@
 # PokePark Wiicompiled
 
-A native Windows port of *PokePark Wii: Pikachu's Adventure* (USA, R8AE01).
+A native Windows and Android port of *PokePark Wii: Pikachu's Adventure*
+(USA, R8AE01).
 The game's PowerPC code is statically recompiled into C and runs natively,
 with the Wii's hardware replaced underneath it. There is no emulator: the
 game's own code runs, drawing with Vulkan or OpenGL at high resolutions and
-frame rates, played with a keyboard and mouse or a controller.
+frame rates, played with a keyboard and mouse, a controller, or a touch
+screen.
 
 **This repository contains no game data.** You need your own copy of the
 game. The program reads your disc image the first time it runs.
 
 > **Open beta.** Please report problems in [Issues](../../issues). Say what
 > you did and what happened, attach a screenshot if you can, and give your
-> Windows version, graphics card and Renderer setting (Options > Display).
+> Windows version, graphics card and Renderer setting (Options > Display),
+> or on Android your phone's model and Android version.
 
-## Playing
+## Playing on Windows
 
 1. Download the latest build from [Releases](../../releases) and unzip it.
 2. Run `PokePark.exe`.
@@ -25,6 +28,23 @@ Keep the `prompts` and `tools` folders beside `PokePark.exe`.
 
 **Requirements:** Windows 10 or 11 (64-bit) and a graphics card with
 Vulkan 1.3 or OpenGL 3.3.
+
+## Playing on Android
+
+1. Download the `.apk` from [Releases](../../releases) on your phone and
+   install it (allow installing apps from your browser or file manager
+   when asked).
+2. Open **PokePark**.
+3. The first time, choose your disc image (RVZ, ISO, WBFS, WIA, CISO and
+   the like) in the file picker. The game plays straight from it, so
+   nothing is extracted; if you move the file, the app asks again.
+
+Play with the touch controls drawn over the game (a stick on the left,
+the buttons on the right, drag elsewhere to turn the camera) or a
+controller. Settings are in Options, in the PokéPark Pad.
+
+**Requirements:** Android 11 or later on a 64-bit (arm64) phone with
+Vulkan 1.3. Tested on one phone (Adreno 830 GPU) so far.
 
 ## Improvements over the Wii version
 
@@ -127,8 +147,9 @@ releases it, and a click captures it again.
   silent.
 - **Input:** no Wii Remote pointer or Nunchuk. The game is played
   sideways, so neither is needed for the main game.
-- Windows only for now. It has been tested on one PC, so problems on
-  other hardware are likely: please report them.
+- **Android:** no rumble yet, and no HOME button on the touch controls.
+- It has been tested on one PC and one phone, so problems on other
+  hardware are likely: please report them.
 
 ## Building
 
@@ -154,6 +175,10 @@ built.
    settings menu (Backspace, or Back+Start on a controller) that can start
    any minigame.
 
+The Android app is built with `python tools/recomp/build.py --android`,
+which needs the Android SDK and NDK and Rust; see
+[recomp/README.md](recomp/README.md#android).
+
 How it works, and the environment variables for testing, are described
 in [recomp/README.md](recomp/README.md).
 
@@ -164,7 +189,10 @@ in [recomp/README.md](recomp/README.md).
   [PokePark Wii decompilation](https://github.com/SephDB/pokepark-wii-decomp)
   by Seph De Busser and contributors.
 - Disc images are read with
-  [decomp-toolkit](https://github.com/encounter/decomp-toolkit).
+  [decomp-toolkit](https://github.com/encounter/decomp-toolkit) on
+  Windows and [nod](https://github.com/encounter/nod) on Android, both by
+  Luke Street and contributors (MIT or Apache-2.0; licenses in
+  `recomp/assets`).
 - Button icons by [Icons8](https://icons8.com).
 
 PokePark Wii is Â© Nintendo, Creatures Inc., GAME FREAK inc. and The
