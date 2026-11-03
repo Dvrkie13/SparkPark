@@ -140,11 +140,12 @@ releases it, and a click captures it again.
 
 ## Known gaps
 
-- **Graphics:** fog, indirect texturing,
-  dynamic lighting, logic ops, z-textures, and lines and points aren't
-  drawn yet.
-- **Sound:** no reverb or other effects, and the Wii Remote speaker is
-  silent.
+- **Graphics:** logic ops, z-textures, and lines and points aren't
+  drawn yet (no area tested so far uses them), and fog has no range
+  adjustment.
+- **Sound:** the Wii Remote speaker is silent. The game's own effects
+  (such as reverb) are mixed in, but no area tested so far uses them, so
+  that is untested.
 - **Input:** no Wii Remote pointer or Nunchuk. The game is played
   sideways, so neither is needed for the main game.
 - **Android:** no rumble yet, and no HOME button on the touch controls.
