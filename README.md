@@ -10,18 +10,26 @@ and mouse or a controller.
 SparkPark is a fork of
 **[PokePark Wiicompiled](https://github.com/MildRain479/PokePark-Wiicompiled)
 by MildRain479** (CC0), which did the recompilation, the runtime and nearly
-everything described below. SparkPark adds a one-time builder, controller
-improvements (right-stick camera and pointer) and fills some of upstream's
-gaps. See [Credits](#credits).
+everything described below. SparkPark's own additions so far are its name,
+a full disc check (below) and docs. Planned: a one-time builder that sets
+everything up with one button, a right-stick camera/pointer toggle, and
+filling some of upstream's gaps. See [Credits](#credits).
+
+SparkPark is unofficial. It is not affiliated with or endorsed by Nintendo,
+Creatures Inc., GAME FREAK inc. or The Pokémon Company.
 
 **Bring your own disc. This repository contains no game data**, and
 SparkPark never distributes any: no disc files, and no recompiled or
-compiled game code. You need your own copy of the game (USA, Rev 0). The
-game is recompiled and built on your PC, from your disc.
+compiled game code. You need your own copy of the game: the USA release,
+**R8AE01, Rev 0**, as a full 1:1 dump. SparkPark checks it against the
+original disc's Redump hash (SHA-1
+`c9a6f7601fd54b5e21a0909084839d30874a9a37`) and tells you why if it
+doesn't match: wrong region, wrong revision, NKit or scrubbed, or
+modified. The game is recompiled and built on your PC, from your disc.
 
-> **Work in progress.** SparkPark's one-time builder, which will verify your
-> disc and build the game on your PC with one button, isn't done yet. Until
-> it is, build from source as described in [Building](#building).
+> **Alpha, source only.** There are no ready-to-play downloads, and there
+> won't be: SparkPark never ships game code. Until the one-time builder is
+> done, build from source as described in [Building](#building).
 
 ## Playing on Windows
 
@@ -110,7 +118,7 @@ Optional changes to the game's balance, all off (100%) by default:
 | 1 | Dash | Left click / Z | X |
 | A | Thunderbolt | Right click / Enter | B |
 | B | Recenter camera | V / Left Ctrl | Y / right trigger |
-| | Turn camera | Mouse | |
+| | Turn camera | Mouse | Right stick |
 | + | PokéPark Pad | P | Start |
 | - | Map | M | Back |
 | HOME | | Home / H | Right stick click |
@@ -136,29 +144,56 @@ releases it, and a click captures it again.
 
 </details>
 
-## Known gaps
+## Known issues
+
+SparkPark (v0.1.0-alpha):
+
+- **Source only.** You need Visual Studio's C++ tools and Python to build
+  the game yourself; the one-time builder isn't done yet.
+- **Tested on one PC, with OpenGL only.** The dev machine has no Vulkan
+  SDK, so the Vulkan renderer hasn't been built or tested in SparkPark yet.
+- **The disc check in the first-run window** has been tested on
+  decomp-toolkit's real output for a good and a bad disc, but not yet
+  clicked through by hand from a fresh folder.
+- **The game window takes focus when it opens**, so anything you're typing
+  elsewhere at that moment goes to the game. A connected controller's
+  buttons also count while the window is in the background (upstream's
+  behavior).
+
+From upstream (the game port itself):
 
 - **Graphics:** fog, indirect texturing,
   dynamic lighting, logic ops, z-textures, and lines and points aren't
   drawn yet.
 - **Sound:** no reverb or other effects, and the Wii Remote speaker is
   silent.
-- **Input:** no Wii Remote pointer or Nunchuk. The game is played
-  sideways, so neither is needed for the main game.
+- **Input:** the Wii Remote pointer works only in the minigames that need
+  it (Rayquaza's and Rotom's), with the mouse or right stick; there's no
+  general pointer for menus or the camera view, and no Nunchuk. The game
+  is played sideways, so neither is needed for the main game.
 - **Android:** no rumble yet, and no HOME button on the touch controls.
-- It has been tested on one PC and one phone, so problems on other
+  (SparkPark keeps upstream's Android code but doesn't test it.)
+- Upstream was tested on one PC and one phone, so problems on other
   hardware are likely: please report them.
 
 ## Building
 
-Needs Windows 10 or 11, Visual Studio 2022 or later (C++ desktop workload;
-the Build Tools are enough), Python 3 and, for the Vulkan renderer, the
-[Vulkan SDK](https://vulkan.lunarg.com/). Without the SDK, only OpenGL is
-built.
+Needs Windows 10 or 11, Visual Studio 2022 or 2026 with the C++ desktop
+workload (the free Build Tools are enough), Python 3 and decomp-toolkit.
+The [Vulkan SDK](https://vulkan.lunarg.com/) is optional: without it only
+the OpenGL renderer is built, which works fine.
 
 1. Get [decomp-toolkit](https://github.com/encounter/decomp-toolkit/releases)
    v1.6.2 and put it at `build/tools/dtk.exe`.
-2. Extract your disc image, and put `main.dol` beside the extracted disc:
+2. Check your disc image is the right one:
+   ```
+   build\tools\dtk.exe disc verify "<your disc image>"
+   ```
+   It should say `Redump: PokePark Wii - Pikachu's Adventure (USA)` and
+   `SHA-1 : c9a6f7601fd54b5e21a0909084839d30874a9a37`, both ticked. If it
+   doesn't, the image is another region or revision, NKit or scrubbed, or
+   modified; make a 1:1 dump of your disc instead.
+3. Extract your disc image, and put `main.dol` beside the extracted disc:
    ```
    build\tools\dtk.exe disc extract "<your disc image>" orig\R8AE01\disc
    mkdir orig\R8AE01\sys
@@ -166,7 +201,7 @@ built.
    ```
    `orig/` and `build/` are git-ignored. They hold your game data and what's
    built from it, so never commit or share them.
-3. Recompile and build:
+4. Recompile and build:
    ```
    python tools/recomp/recomp.py
    python tools/recomp/build.py --run test
@@ -177,9 +212,10 @@ built.
    controller) that can start any minigame. `--dist` puts `SparkPark.exe`
    and its files in `build/recomp/dist`.
 
-The program you build contains game code recompiled from your disc. It's
-for you to play: don't share it. (`build.py --public` from upstream makes a
-`Releases/` folder; SparkPark doesn't publish one.)
+**The program you build contains game code recompiled from your disc.
+It's for you to play: never share or upload it.** For the same reason,
+upstream's `build.py --public` (which assembles a `Releases/` folder) is
+switched off in SparkPark; `--public-local-only` allows it for local tests.
 
 How it works, and the environment variables for testing, are described
 in [recomp/README.md](recomp/README.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
