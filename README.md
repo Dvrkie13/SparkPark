@@ -1,50 +1,48 @@
-# PokePark Wiicompiled
+# SparkPark
 
-A native Windows and Android port of *PokePark Wii: Pikachu's Adventure*
-(USA, R8AE01).
-The game's PowerPC code is statically recompiled into C and runs natively,
-with the Wii's hardware replaced underneath it. There is no emulator: the
-game's own code runs, drawing with Vulkan or OpenGL at high resolutions and
-frame rates, played with a keyboard and mouse, a controller, or a touch
-screen.
+SparkPark is an **unofficial PC recompilation of PokÃ©Park Wii: Pikachu's
+Adventure** (Wii, USA, R8AE01). The game's PowerPC code is statically
+recompiled into C and runs natively, with the Wii's hardware replaced
+underneath it. There is no emulator: the game's own code runs, drawing with
+Vulkan or OpenGL at high resolutions and frame rates, played with a keyboard
+and mouse or a controller.
 
-**This repository contains no game data.** You need your own copy of the
-game. The program reads your disc image the first time it runs.
+SparkPark is a fork of
+**[PokePark Wiicompiled](https://github.com/MildRain479/PokePark-Wiicompiled)
+by MildRain479** (CC0), which did the recompilation, the runtime and nearly
+everything described below. SparkPark adds a one-time builder, controller
+improvements (right-stick camera and pointer) and fills some of upstream's
+gaps. See [Credits](#credits).
 
-> **Open beta.** Please report problems in [Issues](../../issues). Say what
-> you did and what happened, attach a screenshot if you can, and give your
-> Windows version, graphics card and Renderer setting (Options > Display),
-> or on Android your phone's model and Android version.
+**Bring your own disc. This repository contains no game data**, and
+SparkPark never distributes any: no disc files, and no recompiled or
+compiled game code. You need your own copy of the game (USA, Rev 0). The
+game is recompiled and built on your PC, from your disc.
+
+> **Work in progress.** SparkPark's one-time builder, which will verify your
+> disc and build the game on your PC with one button, isn't done yet. Until
+> it is, build from source as described in [Building](#building).
 
 ## Playing on Windows
 
-1. Download the latest build from [Releases](../../releases) and unzip it.
-2. Run `PokePark.exe`.
+1. Build the game (see [Building](#building)).
+2. Run `SparkPark.exe` (or `build/recomp/boot.exe` for a development build).
 3. The first time, choose your disc image (ISO, RVZ, WBFS, WIA, CISO and
-   the like). The game is set up in an `R8AE01` folder beside the program,
-   and your saves are kept in `R8AE01\nand`.
+   the like). It's checked against the original disc (Redump, R8AE01
+   Rev 0); if it doesn't match, you're told why (wrong region or revision,
+   NKit or scrubbed, or modified). The game is then set up in an `R8AE01`
+   folder beside the program, and your saves are kept in `R8AE01\nand`.
 
-Keep the `prompts` and `tools` folders beside `PokePark.exe`.
+Keep the `prompts` and `tools` folders beside `SparkPark.exe`.
 
 **Requirements:** Windows 10 or 11 (64-bit) and a graphics card with
 Vulkan 1.3 or OpenGL 3.3.
 
-## Playing on Android
+## Android
 
-1. Download the `.apk` from [Releases](../../releases) on your phone and
-   install it (allow installing apps from your browser or file manager
-   when asked).
-2. Open **PokePark**.
-3. The first time, choose your disc image (RVZ, ISO, WBFS, WIA, CISO and
-   the like) in the file picker. The game plays straight from it, so
-   nothing is extracted; if you move the file, the app asks again.
-
-Play with the touch controls drawn over the game (a stick on the left,
-the buttons on the right, drag elsewhere to turn the camera) or a
-controller. Settings are in Options, in the PokéPark Pad.
-
-**Requirements:** Android 11 or later on a 64-bit (arm64) phone with
-Vulkan 1.3. Tested on one phone (Adreno 830 GPU) so far.
+Upstream's Android app is kept in the code unchanged, but SparkPark is
+developed and tested on Windows only for now. See upstream's
+[recomp/README.md](recomp/README.md#android) to build it.
 
 ## Improvements over the Wii version
 
@@ -153,37 +151,45 @@ releases it, and a click captures it again.
 
 ## Building
 
-Needs Windows 10 or 11, Visual Studio 2022 (C++ desktop workload),
-Python 3 and, for the Vulkan renderer, the
+Needs Windows 10 or 11, Visual Studio 2022 or later (C++ desktop workload;
+the Build Tools are enough), Python 3 and, for the Vulkan renderer, the
 [Vulkan SDK](https://vulkan.lunarg.com/). Without the SDK, only OpenGL is
 built.
 
 1. Get [decomp-toolkit](https://github.com/encounter/decomp-toolkit/releases)
    v1.6.2 and put it at `build/tools/dtk.exe`.
-2. Extract your disc image:
+2. Extract your disc image, and put `main.dol` beside the extracted disc:
    ```
    build\tools\dtk.exe disc extract "<your disc image>" orig\R8AE01\disc
+   mkdir orig\R8AE01\sys
+   copy orig\R8AE01\disc\sys\main.dol orig\R8AE01\sys\
    ```
+   `orig/` and `build/` are git-ignored. They hold your game data and what's
+   built from it, so never commit or share them.
 3. Recompile and build:
    ```
    python tools/recomp/recomp.py
    python tools/recomp/build.py --run test
-   python tools/recomp/build.py --public
+   python tools/recomp/build.py --dist
    ```
-   `--public` puts a release build in `Releases/`. Without it you get a
-   development build at `build/recomp/boot.exe`, which also has a debug
-   settings menu (Backspace, or Back+Start on a controller) that can start
-   any minigame.
+   Without `--dist` you get a development build at `build/recomp/boot.exe`,
+   which also has a debug settings menu (Backspace, or Back+Start on a
+   controller) that can start any minigame. `--dist` puts `SparkPark.exe`
+   and its files in `build/recomp/dist`.
 
-The Android app is built with `python tools/recomp/build.py --android`,
-which needs the Android SDK and NDK and Rust; see
-[recomp/README.md](recomp/README.md#android).
+The program you build contains game code recompiled from your disc. It's
+for you to play: don't share it. (`build.py --public` from upstream makes a
+`Releases/` folder; SparkPark doesn't publish one.)
 
 How it works, and the environment variables for testing, are described
-in [recomp/README.md](recomp/README.md).
+in [recomp/README.md](recomp/README.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Credits
 
+- **SparkPark is based on
+  [PokePark Wiicompiled](https://github.com/MildRain479/PokePark-Wiicompiled)
+  by MildRain479**, released under CC0 1.0. The recompiler, the runtime,
+  the renderers, the controls and the options all come from it.
 - The function list (`config/R8AE01/symbols.txt`) and the decompiled
   sources in `src/` come from the
   [PokePark Wii decompilation](https://github.com/SephDB/pokepark-wii-decomp)

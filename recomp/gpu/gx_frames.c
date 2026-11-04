@@ -122,7 +122,7 @@ static void report(void) {
         double secs = (double)(now.QuadPart - since.QuadPart) / freq.QuadPart;
         double busy = 100.0 * (1.0 - (double)(g_wait_ticks - lastWait) / PPC_TB_HZ / secs);
         lastWait = g_wait_ticks;
-        snprintf(title, sizeof(title), "PokePark (recompiled) - %.2f fps, slowest frame %.1f ms, busy %.0f%%", fps,
+        snprintf(title, sizeof(title), "SparkPark - %.2f fps, slowest frame %.1f ms, busy %.0f%%", fps,
                  worst, busy);
         win_set_title(title);
         if (e && *e == '1')

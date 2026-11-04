@@ -35,3 +35,44 @@
 **Next (step 3, Rebrand, next session)**
 - Rename the exe, window title, Android app name and README branding to SparkPark, keeping upstream credit and licenses.
 - Decide on the open questions above: builder model, Android yes/no, right stick pointer vs camera.
+
+## 2026-11-03: Fork session 2, Build Order step 3 (rebrand) + disc verification + builder research
+
+**Done**
+- Committed the owner's updated CLAUDE.md: distribution model (build on the player's PC), right stick camera/pointer split, Android left untouched.
+- **Rebrand (Windows side; Android untouched):**
+  - `build.py --dist`/`--public` now write `SparkPark.exe`.
+  - Window title `SparkPark` (`window_win32.c`); fps title `SparkPark - … fps` (`gx_frames.c`); Vulkan application name; `boot.c` and `import_win32.c` message box/window titles and texts; the `settings.ini` header.
+  - `recomp/assets/release_readme.txt` and `README.md`. README covers SparkPark, an unofficial PC recompilation, forked from MildRain479's PokePark Wiicompiled with credit, bring your own disc, no game data, and that built exes must not be shared. It's now clean UTF-8 (upstream's had one stray cp1252 byte).
+  - Left alone: comments that describe the game, internal window-class names, the Android app, and upstream's LICENSE and credits (kept, with the fork credit added on top).
+- **Disc verification** (`recomp/boot/disc_verify.c/.h`, new). Before extracting, the first-run import now runs:
+  - `dtk disc info`: game ID / revision / lossless;
+  - `dtk disc verify`: CRC32 + SHA-1 of the whole disc;
+  - a comparison with the Redump values for R8AE01 Rev 0 (`26e533d5`, `c9a6f760…874a9a37`, 4,699,979,776 bytes).
+
+  Failures name the cause: unreadable, another game, wrong region (PAL/JP/KR/TW), wrong revision, NKit/scrubbed (NKit magic, a lossy image, or a short ISO), or modified. The dtk output is captured through a pipe while the window keeps responding.
+  - 13 unit checks in `recomp/tests/test_disc_verify.cpp` (in the `test` target), all passing.
+  - Also checked on real dtk output: the owner's ISO → OK; `main.dol` as an "image" → unreadable; Rev 1 header → wrong revision; one changed SHA-1 digit → modified.
+  - *Not yet tried:* clicking through the actual import window, which needs a manual run from a clean folder.
+- **docs/BUILDER-PLAN.md**: toolchain options (llvm-mingw 190.6 MB / Zig 100.3 MB / WinLibs 276 MB, with licenses), Python embeddable (10.9 MB), a prebuilt runtime library with zero game code (feasible: `recomp_funcs.h` is prototypes only; the runtime references 111 public addresses), the build-time estimate (~5-15 min on a typical PC), the builder's call sequence, the hard parts, and options A/B/C.
+- **Verified after the changes:**
+  - All tests pass: 2,814,740 + 13 checks.
+  - A full MSVC rebuild takes 96 s.
+  - A scripted hidden-window run reaches the park (Pikachu meets Chatot) at a steady 30 fps.
+  - `--dist` produces `SparkPark.exe` + `tools\dtk.exe` + `prompts\`.
+
+**The Options menu in last session's test.** A repeat of the same 60 s test with no input stays on the title screen the whole time. The first run's frames show deliberate navigation: title → save slots → picture choice → back → Options → Display/Gameplay tabs. So it was real input. Likely causes:
+- the game window takes focus when it opens, and anything typed elsewhere then goes to the game (WASD/arrows browse, Space/X = 2, Enter = A, V/Ctrl = B);
+- or the connected controller on pad 0. Upstream reads XInput buttons even without focus; the keyboard and mouse count only with focus.
+
+The controller is idle at rest (left stick 345/27, inside the deadzone). Test runs now use `RECOMP_GX_HIDDEN=1`, so they never take focus.
+
+**Correction to CLAUDE.md / ARCHITECTURE.md.** The right stick already turns the camera in upstream (`read_mouse()` in `input_win32.c`, 600 px/s); the camera is not mouse-only. ARCHITECTURE.md is fixed. CLAUDE.md's "Corrections" bullet still says mouse-only, for the owner to update.
+
+**Notes**
+- `build.py --public` still assembles a `Releases/` folder whose exe contains recompiled game code. Under the distribution model it must never be published. A guard (refuse, or warn) would be a small change.
+- `vk_backend.c` is shared with Android, so its application-name change also reaches the Android build. It's a string only.
+
+**Next**
+- The owner picks the builder option (A/B/C in BUILDER-PLAN.md) and approves a toolchain download for the llvm-mingw (or Zig) spike.
+- Step 4 (builder) after the spike; step 5 (input: route the right stick to the pointer while DPD is on).

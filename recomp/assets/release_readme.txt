@@ -1,16 +1,18 @@
-PokePark Wii: Pikachu's Adventure - PC port (open beta)
+SparkPark (open beta)
 
-A native Windows version of the game, recompiled from the Wii original.
-No game data is included: you need your own copy of the game.
+An unofficial PC recompilation of PokePark Wii: Pikachu's Adventure,
+forked from MildRain479's PokePark Wiicompiled. No game data is
+included: bring your own disc.
 
 Getting started
 - Windows 10 or 11, 64-bit, and a graphics card with Vulkan 1.3 or
   OpenGL 3.3.
-- Run PokePark.exe. The first time, it asks for your disc image of
+- Run SparkPark.exe. The first time, it asks for your disc image of
   PokePark Wii: Pikachu's Adventure (USA, R8AE01): an ISO, RVZ, WBFS
-  or the like. It sets the game up in an R8AE01 folder beside the
+  or the like. It checks the image against the original disc, then
+  sets the game up in an R8AE01 folder beside the
   program; your saves are kept in R8AE01\nand.
-- Keep the prompts and tools folders beside PokePark.exe.
+- Keep the prompts and tools folders beside SparkPark.exe.
 
 Settings
 - Options are in the pause menu (and on the save files screen):
@@ -31,6 +33,8 @@ what you did and what happened, attach a screenshot if you can, and
 give your Windows version, graphics card, and the Renderer setting.
 
 Credits
+- Based on PokePark Wiicompiled by MildRain479 (CC0):
+  https://github.com/MildRain479/PokePark-Wiicompiled
 - Button icons by Icons8 (https://icons8.com).
 - Disc images are read with decomp-toolkit (tools\dtk.exe); its license
   is in tools\dtk_license.txt.

@@ -1636,7 +1636,7 @@ static int make_instance(void) {
 #define LOAD(name) name = (PFN_##name)(void*)vkGetInstanceProcAddr(NULL, #name);
     VK_GLOBAL_FUNCS(LOAD)
 #undef LOAD
-    app.pApplicationName = "PokePark (recompiled)";
+    app.pApplicationName = "SparkPark";
     app.apiVersion = VK_API_VERSION_1_3;
     ci.pApplicationInfo = &app;
     ci.enabledExtensionCount = validate ? 3 : 2;

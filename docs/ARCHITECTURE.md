@@ -97,7 +97,7 @@ This is the single mechanism for all hardware replacement and game changes.
 | IOS | `hle_ios.c` | `__ios_Ipc2` is answered on the host. Devices it refuses: `/dev/sdio/slot0` (no SD card), USB Bluetooth, network. |
 | **Graphics** | `hle_gx.c` → `recomp/gpu/` | Write-gather pipe stores go to a FIFO, which is decoded as soon as each command completes (`gx_fifo.c`). Also textures (`gx_texture.c`), frame recording and pacing (`gx_frames.c`), and the devices `gl_backend.c` (OpenGL 3.3) and `vk_backend.c` (Vulkan 1.3, shaders in `vk_shaders/`, only built with the Vulkan SDK). The window is `window_win32.c`. |
 | **Audio** | `hle_audio.c` + `boot/audio_win32.c` | The DSP is HLE'd: it mixes AX voices (ADPCM/PCM, resampling, envelopes, LPF) on a 3 ms AI timer, and output goes out through waveOut. No aux/reverb, no remote speaker. |
-| **Input** | `hle_wpad.c`, `hle_motion.c`, `hle_stick.c`, `hle_camera.c` + `boot/input_win32.c` | WPAD is replaced at the driver level (KPAD runs unchanged on top). Remote 0, held sideways, connects ~1 s in, with reports on a 200 Hz timer from `host_input.h`. `hle_motion.c` maps shake/tilt/swing/pointer per minigame. `hle_stick.c` gives analog movement. `hle_camera.c` gives the mouse camera. |
+| **Input** | `hle_wpad.c`, `hle_motion.c`, `hle_stick.c`, `hle_camera.c` + `boot/input_win32.c` | WPAD is replaced at the driver level (KPAD runs unchanged on top). Remote 0, held sideways, connects ~1 s in, with reports on a 200 Hz timer from `host_input.h`. `hle_motion.c` maps shake/tilt/swing/pointer per minigame. `hle_stick.c` gives analog movement. `hle_camera.c` turns the player camera from the mouse, and from the controller's right stick (`read_mouse()` in `input_win32.c` adds the stick at 600 px/s). Controller buttons are read even when the window isn't focused; the keyboard and mouse only count with focus. |
 | **Saves (NAND)** | `hle_nand.c` | `/dev/fs` is backed by a host folder (`R8AE01\nand`). It seeds `SYSCONF` and `setting.txt` (US, English, 16:9). |
 | **SD card** | `hle_ios.c` | **None.** `/dev/sdio/slot0` is refused, so the game sees no card. In-game photos are kept in the NAND save (`…/data/Pic0-3`). |
 | Disc | `hle_dvd.c` | See section 1. |
@@ -151,7 +151,9 @@ The IR path already exists:
 - `hle_wpad.c` fills WPADStatus's DPD objects (the sensor-bar dots) when the game has the IR camera on (`dpdCommand`).
 - `hle_motion.c` moves the pointer from `g_host_pointer_read` (mouse, or the right stick) — but only in the minigames that use it (Rayquaza's Balloon Panic, Rotom's Spooky Shoot-'em-Up).
 
-A general right-stick pointer would extend that gate to whenever the game enables DPD (menus, photo mode / first-person). The stick would be read in `input_win32.c` through `host_input.h`. In the park the right stick is currently free (only its click is bound, to HOME), and upstream's camera is mouse-only.
+A general right-stick pointer would extend that gate to whenever the game enables DPD (menus, photo mode / first-person). The stick would be read in `input_win32.c` through `host_input.h`.
+
+*Correction (fork session 2):* the right stick is **not** free in the park. Upstream already turns the camera with it (`read_mouse()` in `input_win32.c`), and its click is HOME. So the decided camera/pointer split mostly needs the *pointer* half: route the right stick to the pointer instead of the camera whenever the game has DPD on.
 
 ### Per-attraction mappings
 

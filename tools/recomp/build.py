@@ -49,6 +49,9 @@ TARGETS = {
         # Decompiled game code, built natively as the reference.
         os.path.join(ROOT, "src", "flib", "CodepointConvert.cpp"),
         os.path.join(ROOT, "src", "flib", "FName.cpp"),
+        # SparkPark: the set-up's disc checks (recomp/boot/disc_verify.c).
+        os.path.join(ROOT, "recomp", "tests", "test_disc_verify.cpp"),
+        os.path.join(ROOT, "recomp", "boot", "disc_verify.c"),
     ],
     "boot": sorted(s for s in glob.glob(os.path.join(ROOT, "recomp", "boot", "*.c")) +
                    glob.glob(os.path.join(ROOT, "recomp", "gpu", "*.c")) if not s.endswith("_android.c")),
@@ -426,7 +429,7 @@ def main():
     ap.add_argument("--public", action="store_true",
                     help="release build without the debug settings menu, put together in Releases/")
     ap.add_argument("--dist", action="store_true",
-                    help="copy the boot program, as PokePark.exe, and its files to build/recomp/dist")
+                    help="copy the boot program, as SparkPark.exe, and its files to build/recomp/dist")
     ap.add_argument("--android", action="store_true", help="the Android app (arm64), build/recomp/android/PokePark.apk")
     ap.add_argument("--install", action="store_true", help="with --android: install it on the phone with adb")
     ap.add_argument("args", nargs="*", help="extra arguments for --run")
@@ -486,7 +489,7 @@ def main():
         # beside it or above it (boot.c), so this runs in place.
         dist = os.path.join(OUT, "dist")
         os.makedirs(dist, exist_ok=True)
-        shutil.copy2(os.path.join(OUT, "boot.exe"), os.path.join(dist, "PokePark.exe"))
+        shutil.copy2(os.path.join(OUT, "boot.exe"), os.path.join(dist, "SparkPark.exe"))
         shutil.copytree(os.path.join(OUT, "prompts"), os.path.join(dist, "prompts"), dirs_exist_ok=True)
         # decomp-toolkit, which the game's set-up screen extracts disc images with (import_win32.c).
         dtk = os.path.join(ROOT, "build", "tools", "dtk.exe")
@@ -502,7 +505,7 @@ def main():
         os.makedirs(rel, exist_ok=True)
         for old in ("prompts", "tools"):
             shutil.rmtree(os.path.join(rel, old), ignore_errors=True)
-        shutil.copy2(os.path.join(OUT, "boot.exe"), os.path.join(rel, "PokePark.exe"))
+        shutil.copy2(os.path.join(OUT, "boot.exe"), os.path.join(rel, "SparkPark.exe"))
         shutil.copytree(os.path.join(ROOT, "recomp", "assets", "prompts"), os.path.join(rel, "prompts"))
         shutil.copy2(os.path.join(ROOT, "recomp", "assets", "release_readme.txt"), os.path.join(rel, "README.txt"))
         dtk = os.path.join(ROOT, "build", "tools", "dtk.exe")

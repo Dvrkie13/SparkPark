@@ -585,7 +585,7 @@ int main(int argc, char** argv) {
     if (argc < 2) {
         fprintf(stderr, "usage: %s <main.dol> [seconds]\n(or put the game's R8AE01 folder, with sys\\main.dol and disc, beside it)\n", argv[0]);
 #ifdef _WIN32
-        MessageBoxA(NULL, "Put the game's R8AE01 folder (with sys\\main.dol and disc) beside the program.", "PokePark",
+        MessageBoxA(NULL, "Put the game's R8AE01 folder (with sys\\main.dol and disc) beside the program.", "SparkPark",
                     MB_ICONERROR);
 #endif
         return 2;
