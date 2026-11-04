@@ -10,7 +10,7 @@
  *   B                V / Left Ctrl              Y / right trigger
  *   +                P                          Start
  *   -                M                          Back
- *   HOME             Home / H                   right stick click
+ *   first person     Home / H                   right stick click
  *   camera           mouse                      right stick
  *   shake (held)     Q / Left Shift             LB
  *   shake 2          E                          RB

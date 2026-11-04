@@ -32,7 +32,7 @@ void (*g_host_pad_rumble)(int chan, int on);
 enum {
     WPAD_LEFT = 0x0001, WPAD_RIGHT = 0x0002, WPAD_DOWN = 0x0004, WPAD_UP = 0x0008,
     WPAD_PLUS = 0x0010, WPAD_2 = 0x0100, WPAD_1 = 0x0200, WPAD_B = 0x0400,
-    WPAD_A = 0x0800, WPAD_MINUS = 0x1000, WPAD_HOME = 0x8000,
+    WPAD_A = 0x0800, WPAD_MINUS = 0x1000,
 };
 
 /* One g in the accelerometer's units, as calibrated on a typical remote. */
@@ -115,6 +115,12 @@ static uint32_t script_held(void) {
     return held;
 }
 
+/* What was held at the last read, HOME among it: it never reaches the game
+ * as a button, but changes the camera (hle_camera.c). */
+static uint32_t sHeld;
+
+uint32_t hle_wpad_held(void) { return sHeld; }
+
 /* Held sideways, d-pad on the left: the remote's UP points left on screen,
  * RIGHT points up. */
 static uint16_t wpad_buttons(uint32_t held) {
@@ -124,7 +130,6 @@ static uint16_t wpad_buttons(uint32_t held) {
         {HOST_PAD_A, WPAD_A},             {HOST_PAD_B, WPAD_B},
         {HOST_PAD_1, WPAD_1},             {HOST_PAD_2, WPAD_2},
         {HOST_PAD_PLUS, WPAD_PLUS},       {HOST_PAD_MINUS, WPAD_MINUS},
-        {HOST_PAD_HOME, WPAD_HOME},
     };
     uint16_t b = 0;
     size_t i;
@@ -221,6 +226,7 @@ void f_802488A0(ppc_t* c) {
     if (on && chan == 0) {
         uint32_t scripted = script_held();
         if (!g_host_script_input || !g_host_script_input(scripted)) held |= scripted;
+        sHeld = held;
     }
     if (on && chan == 0 && (motion = hle_motion(held, sReports, acc, dots)) != 0) {
         /* In minigames, the remote's motion as each asks (hle_motion.c). */

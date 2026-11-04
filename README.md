@@ -119,9 +119,12 @@ Optional changes to the game's balance, all off (100%) by default:
 | | Turn camera | Mouse | |
 | + | PokéPark Pad | P | Start |
 | - | Map | M | Back |
-| HOME | | Home / H | Right stick click |
+| | First person | Home / H | Right stick click |
 | Shake | Iron Tail | Q / Left Shift (hold) | LB (hold) |
 | Shake (minigames) | Running, swinging | Q and E by turns | LB and RB by turns |
+
+In first person, the mouse or right stick looks around and - takes a
+Photo. The same button leaves it, as does any other button but + and -.
 
 While the window has focus, the mouse is captured for the camera. Esc
 releases it, and a click captures it again.
@@ -151,7 +154,7 @@ releases it, and a click captures it again.
   that is untested.
 - **Input:** no Wii Remote pointer or Nunchuk. The game is played
   sideways, so neither is needed for the main game.
-- **Android:** no rumble yet, and no HOME button on the touch controls.
+- **Android:** no rumble yet, and first person needs a controller: the touch controls have no button for it.
 - It has been tested on one PC and one phone, so problems on other
   hardware are likely: please report them.
 

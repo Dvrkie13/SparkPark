@@ -32,6 +32,9 @@ enum { HLE_TIMER_AUDIO = 0, HLE_TIMER_PAD = 1 };
 /* The emulated video refresh rate (RECOMP_VI_HZ, default 60). */
 double hle_vi_hz(void);
 
+/* What remote 0 had held at its last read (HOST_PAD_*). */
+uint32_t hle_wpad_held(void);
+
 /* Whether the console is set up for a 16:9 TV (RECOMP_WIDESCREEN, default
  * on; 0 for 4:3). The game then draws 16:9 pictures squeezed into its
  * 640-pixel-wide frame, as the Wii does for a TV to stretch out. */

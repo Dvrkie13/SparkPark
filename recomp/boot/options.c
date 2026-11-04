@@ -83,7 +83,7 @@ static const Row kGameplay[] = {
     {ROW_SETTING, SET_CHASE_SPEED, "Chase speed"},
 };
 static const char* const kAction[ACT_COUNT] = {
-    "Up", "Down", "Left", "Right", "2: Jump", "1: Dash", "A: Thunderbolt", "B: Camera", "+: Pad", "-: Map", "HOME",
+    "Up", "Down", "Left", "Right", "2: Jump", "1: Dash", "A: Thunderbolt", "B: Camera", "+: Pad", "-: Map", "First person",
     "Shake", "Shake 2",
 };
 

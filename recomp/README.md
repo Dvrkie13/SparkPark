@@ -131,9 +131,14 @@ default:
 | B | recenter the camera | V / Left Ctrl | Y / right trigger |
 | (none) | turn the camera | mouse | |
 | + / - | | P / M | Start / Back |
-| HOME | | Home / H | right stick click |
+| (none) | first person | Home / H | right stick click |
 | shake | Iron Tail | Q / Left Shift (hold) | LB (hold) |
 | shake, in minigames | (Bulbasaur's dash and the like) | Q and E by turns | LB and RB by turns |
+
+In first person (`hle_camera.c`, the game's own camera, entered on the
+Wii by pointing at the screen and pressing B) the right stick and mouse
+look around, and - takes a Photo. The click leaves it again, as does any
+other button but + and -.
 
 **Minigames** (`hle_motion.c`) get the remote held and moved as their
 instructions ask, from the same keys:

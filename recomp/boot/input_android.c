@@ -10,7 +10,7 @@
  *                    own for moving in any direction (hle_stick.c)
  *   right, bottom    2 (jump), 1 (dash), A (Thunderbolt), B (camera),
  *                    Shake and Shake 2 (in minigames, by turns)
- *   top left         - and + (no HOME button)
+ *   top left         - and + (first person: a controller's right stick click)
  *   anywhere else    dragging turns the camera, as the mouse does
  * A touch on the Options tab of the PokéPark Pad, or the save file
  * screen's Options button, opens it; while it is open, touches work it
