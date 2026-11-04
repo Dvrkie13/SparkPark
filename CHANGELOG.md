@@ -2,7 +2,27 @@
 
 SparkPark is a fork of [PokePark Wiicompiled](https://github.com/MildRain479/PokePark-Wiicompiled) by MildRain479 (CC0). The game port itself is upstream's work: the static recompiler, the runtime and hardware replacement, the Vulkan and OpenGL renderers, audio, controls, minigame motion mappings, the in-game Options menu and the quality-of-life features.
 
-This changelog lists what SparkPark adds on top. SparkPark is source-only and never distributes game data or code built from it.
+This changelog lists what SparkPark adds on top. SparkPark never distributes game data or code built from it: its download is a builder that makes the game on the player's PC from their own disc.
+
+## v0.2.0-alpha — 2026-11-04
+
+The first SparkPark release players can use. Its one download, `SparkPark-v0.2.0-alpha.zip`, is a **one-time builder**: it contains no game code and nothing from the disc. The game itself is still upstream's port; see the top of this file.
+
+### Added
+- **The one-time builder** (`SparkPark.exe`, `builder/`). It is the design in `docs/launcher/sparkpark-launcher.html`, shown through WebView2, with its one button wired to real steps:
+  - **Upload ISO → Checking disc… (with progress).** The Redump check from v0.1.0, with the reason shown on the sign if it fails.
+  - **Build Recomp → Building… N%.** It extracts the disc (dtk), recompiles the game code (upstream's recompiler, on embedded Python), and compiles and links it with the bundled llvm-mingw against a prebuilt runtime library. A failed build shows the reason and **Retry Build**.
+  - **Play.** Every later start goes straight into the game. Hold Shift or use `--rebuild` to see the builder again.
+  - It works with the mouse, Enter/Space or a controller's A button.
+  - Data is kept in `%LOCALAPPDATA%\SparkPark`, or beside the builder with `portable.txt`.
+  - The Baloo 2 font is bundled (SIL OFL), with nothing loaded from the internet.
+- **Building without Visual Studio** (`tools/sparkpark/build_player.py`). The runtime is prebuilt as a library from a header made from the public function list alone, so it holds no game code. The player's PC compiles only the code recompiled from their own disc.
+- **`builder/audit.py`.** It proves a release zip holds no game code or disc data (see `docs/PROGRESS.md`, phase 3).
+- `README.txt`, `NOTICES.txt` and a `licenses` folder in the zip, covering every bundled component.
+
+### Changed
+- `boot.c` includes `<mmsystem.h>`, needed by mingw-w64 for `timeBeginPeriod`.
+- The README describes the builder download.
 
 ## v0.1.0-alpha — 2026-11-03
 

@@ -10,10 +10,10 @@ and mouse or a controller.
 SparkPark is a fork of
 **[PokePark Wiicompiled](https://github.com/MildRain479/PokePark-Wiicompiled)
 by MildRain479** (CC0), which did the recompilation, the runtime and nearly
-everything described below. SparkPark's own additions so far are its name,
-a full disc check (below) and docs. Planned: a one-time builder that sets
-everything up with one button, a right-stick camera/pointer toggle, and
-filling some of upstream's gaps. See [Credits](#credits).
+everything described below. SparkPark adds a one-time builder that checks
+your disc and builds the game on your PC with one button, plus a full disc
+check. Planned: a right-stick camera/pointer toggle and filling some of
+upstream's gaps. See [Credits](#credits).
 
 SparkPark is unofficial. It is not affiliated with or endorsed by Nintendo,
 Creatures Inc., GAME FREAK inc. or The Pokémon Company.
@@ -27,24 +27,35 @@ original disc's Redump hash (SHA-1
 doesn't match: wrong region, wrong revision, NKit or scrubbed, or
 modified. The game is recompiled and built on your PC, from your disc.
 
-> **Alpha, source only.** There are no ready-to-play downloads, and there
-> won't be: SparkPark never ships game code. Until the one-time builder is
-> done, build from source as described in [Building](#building).
+> **Alpha.** The download from [Releases](../../releases) is the one-time
+> builder, not the game: it contains no game code, and SparkPark never
+> ships any. The builder makes the game on your PC from your disc.
 
 ## Playing on Windows
 
-1. Build the game (see [Building](#building)).
-2. Run `SparkPark.exe` (or `build/recomp/boot.exe` for a development build).
-3. The first time, choose your disc image (ISO, RVZ, WBFS, WIA, CISO and
+1. Download `SparkPark-v0.2.0-alpha.zip` from [Releases](../../releases)
+   and unzip it anywhere.
+2. Run `SparkPark.exe`.
+3. **Upload ISO:** choose your disc image (ISO, RVZ, WBFS, WIA, CISO and
    the like). It's checked against the original disc (Redump, R8AE01
-   Rev 0); if it doesn't match, you're told why (wrong region or revision,
-   NKit or scrubbed, or modified). The game is then set up in an `R8AE01`
-   folder beside the program, and your saves are kept in `R8AE01\nand`.
+   Rev 0); if it doesn't match, you're told why: wrong region or revision,
+   NKit or scrubbed, or modified.
+4. **Build Recomp:** the builder extracts your disc, recompiles the game
+   code and builds the game with the compiler bundled in the zip (no Visual
+   Studio needed). About a minute on a fast PC, a few on a slower one.
+5. **Play.** From then on `SparkPark.exe` goes straight into the game
+   (hold Shift while starting it, or run `SparkPark.exe --rebuild`, to see
+   the builder again).
 
-Keep the `prompts` and `tools` folders beside `SparkPark.exe`.
+The game, your saves and settings are kept in `%LOCALAPPDATA%\SparkPark`
+(or in a `data` folder beside `SparkPark.exe` if you put an empty
+`portable.txt` there). Everything in it comes from your disc: never share
+it. The zip's `README.txt` has the details.
 
-**Requirements:** Windows 10 or 11 (64-bit) and a graphics card with
-Vulkan 1.3 or OpenGL 3.3.
+**Requirements:** Windows 10 or 11 (64-bit), the Microsoft Edge WebView2
+Runtime (part of Windows 11 and almost every Windows 10 PC), a graphics
+card with OpenGL 3.3, and about 2.5 GB of free disk space (0.4 GB for the
+unzipped builder, about 2 GB for the game it builds).
 
 ## Android
 
@@ -146,15 +157,17 @@ releases it, and a click captures it again.
 
 ## Known issues
 
-SparkPark (v0.1.0-alpha):
+SparkPark (v0.2.0-alpha):
 
-- **Source only.** You need Visual Studio's C++ tools and Python to build
-  the game yourself; the one-time builder isn't done yet.
-- **Tested on one PC, with OpenGL only.** The dev machine has no Vulkan
-  SDK, so the Vulkan renderer hasn't been built or tested in SparkPark yet.
-- **The disc check in the first-run window** has been tested on
-  decomp-toolkit's real output for a good and a bad disc, but not yet
-  clicked through by hand from a fresh folder.
+- **Tested on one PC so far.** Builds on slower PCs will take longer;
+  please report how long yours took.
+- **OpenGL only.** The builder's runtime is built without the Vulkan
+  renderer for now.
+- **From a USB hard drive the disc check is slow** (it reads the whole
+  image: about 2 minutes at 40 MB/s; the caption shows its progress). Copy
+  the image to an SSD first for a faster start.
+- **"Would you like to choose this Picture?"** starts on No: press left
+  (d-pad, left stick or the arrow keys) before confirming.
 - **The game window takes focus when it opens**, so anything you're typing
   elsewhere at that moment goes to the game. A connected controller's
   buttons also count while the window is in the background (upstream's
