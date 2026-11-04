@@ -31,6 +31,7 @@ static ppc_t* gCpu;
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <dbghelp.h>
+#include <mmsystem.h> /* timeBeginPeriod: not reached through windows.h under mingw-w64 */
 #pragma comment(lib, "dbghelp.lib")
 
 /* RECOMP_WATCH: the watched guest range and its write-protected page. */

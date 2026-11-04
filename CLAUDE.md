@@ -126,7 +126,8 @@ Look: an original storybook-style wooden signboard in a sunny park scene. No gam
 - **Bottom bar:** a bold "Bring your own disc" and a single controller hint whose action follows the button (A = Upload ISO / Build / Play).
 - Works with both a controller and a mouse.
 - If the build fails, show the error on the sign and let the user retry.
-- The visual reference is the SparkPark Builder design mockup (to be exported and added to `docs/`).
+- **The design reference is `docs/launcher/sparkpark-launcher.html`.** It's a standalone page with the exact look, animations and state flow; open it in a browser. Its build steps are simulated with timers, and the real builder wires them to the actual verify / extract / recompile / link steps. Screenshots of each state are also in `docs/`.
+- Bundle the font (Baloo 2, SIL Open Font License) locally. Never load it from the internet at runtime.
 
 ## Open items
 

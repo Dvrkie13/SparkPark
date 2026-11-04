@@ -109,3 +109,52 @@ The controller is idle at rest (left stick 345/27, inside the deadzone). Test ru
 - The owner picks the builder option (A/B/C in BUILDER-PLAN.md) and approves a toolchain download (llvm-mingw or Zig) for the build-time and fps spike.
 - Hand-test the first-run disc check by running `SparkPark.exe` from a clean folder.
 - Step 5: the right stick to the pointer while DPD is on, then the manual toggle, the setting and the indicator.
+
+## 2026-11-04: v0.2.0-alpha, phase 1: prove the toolchain (no MSVC)
+
+The plan is option **A** in BUILDER-PLAN.md: llvm-mingw, embedded Python, a prebuilt runtime library with no game code, and a separate builder app.
+
+**Done**
+- Downloaded, with hashes verified against the published digests, to `D:\Tools`:
+  - llvm-mingw `20261020-ucrt-x86_64` (clang 23.1.4);
+  - Python **3.15.2** embeddable. The 3.13 line no longer gets Windows builds; 3.13.18 is source only.
+- Upstream's `recomp.py` runs unchanged under embedded Python 3.15 (11-18 s). Its output is byte-identical to the MSVC path's (all 76 files).
+- New `tools/sparkpark/build_player.py`:
+  - **`runtime`** (developer side) compiles `recomp/runtime`, `patches`, `boot` and `gpu` into `libsparkpark_runtime.a` (0.4 MB, 2 s). Its `recomp_funcs.h` is generated from `config/R8AE01/symbols.txt` + `hooks.txt` only (prototypes, no disc).
+  - **`game`** (player side) compiles the player's generated C (clang `-O2 -std=gnu11 -w`, the flags upstream's Android build uses) and links it with the library.
+- Only one source change was needed for clang/mingw: `boot.c` now includes `<mmsystem.h>` (for `timeBeginPeriod`). It's a one-line fix, safe for MSVC too, and could go upstream. Everything else compiled as is.
+- **Player-style build from the ISO, no MSVC** (Ryzen 7 5800X, 16 threads):
+
+  | Step | Time |
+  |---|---|
+  | verify | 6.8 s |
+  | extract | 3.6 s |
+  | recompile | 17.5 s |
+  | compile | 36 s |
+  | link | <1 s |
+  | **total** | **~64 s** |
+
+  `SparkPark.exe` is 22.3 MB (stripped). It imports only Windows system DLLs and the UCRT, **no llvm-mingw DLLs**.
+- **Reaches the park.** Same script, fresh saves, hidden window: both the clang and the MSVC build go new game → Mew intro → park (Chatot). Last 30 s in the park:
+
+  | Build | fps | game thread busy | worst frame |
+  |---|---|---|---|
+  | clang -O2 | 29.93 | 73.6% | 68.9 ms |
+  | MSVC /O2 | 29.93 | 71.9% | 63.2 ms |
+
+  About 2% more CPU for clang, which is within run-to-run noise. Both hold the game's 30 fps.
+- **Trimmed toolchain** (x86_64 only), 299 MB:
+  - `bin`: clang, clang-23, ld.lld, libLLVM-23, libclang-cpp, libc++, libunwind, plus the `mingw32-common.cfg` / `x86_64-*-windows-gnu.cfg` driver configs. Without the configs clang picks `ld` instead of lld.
+  - clang's resource headers and the x86_64 builtins;
+  - `x86_64-w64-mingw32/lib`;
+  - the C headers (no libc++ headers).
+
+  It builds the game (29 s), and the result runs.
+- **Zip estimate**, without the builder app and font: trimmed llvm-mingw + Python + dtk + runtime library and headers + recompiler scripts + `symbols.txt`/`hooks.txt` + prompt icons = **89.4 MB zipped, 335 MB unpacked**.
+
+**Findings for the owner**
+- **Vulkan.** Without the Vulkan SDK, the runtime library is OpenGL only: its `RECOMP_VULKAN` device and the precompiled SPIR-V need `glslc` on the developer side. Upstream's default Renderer setting (Vulkan) falls back to OpenGL. To ship Vulkan, the Vulkan SDK (or just glslc) would be needed on the dev PC.
+- **Picture confirmation.** "Would you like to choose this Picture?" starts on **No**. The owner reports the right stick moves it to Yes; d-pad left (keyboard Left / `RECOMP_PAD_SCRIPT` "left") works too. Scripted tests now press left before 2. Worth handling in step 5 (pointer vs d-pad menus).
+- **Player disk space.** About 335 MB for the unpacked builder, 1.4 GB for the extracted disc, about 54 MB of generated C plus objects during the build, and 22 MB for the exe. Plan for ~2 GB free.
+
+**Next (phase 2, after the owner's OK):** the builder app per `docs/launcher/sparkpark-launcher.html`. Choose WebView2 vs native first.
