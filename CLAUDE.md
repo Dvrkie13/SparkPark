@@ -129,6 +129,37 @@ Look: an original storybook-style wooden signboard in a sunny park scene. No gam
 - **The design reference is `docs/launcher/sparkpark-launcher.html`.** It's a standalone page with the exact look, animations and state flow; open it in a browser. Its build steps are simulated with timers, and the real builder wires them to the actual verify / extract / recompile / link steps. Screenshots of each state are also in `docs/`.
 - Bundle the font (Baloo 2, SIL Open Font License) locally. Never load it from the internet at runtime.
 
+## QOL & performance roadmap (decided: all of it, in batches)
+
+Do the batches in order. Within a batch, measure before and after each change. Every option is a setting (in `settings.ini`, and in the in-game overlay once it exists) with a sensible default. Nothing may break the 30 FPS original behaviour when its option is off.
+
+**Batch 1: measure + quick wins**
+- **Profiling:** a built-in frame-time breakdown (game code / graphics / audio / waiting) behind a debug flag, and a written baseline in `docs/PERFORMANCE.md`.
+- **Vulkan backend:** install the Vulkan SDK on the dev machine, build with Vulkan, compare against OpenGL, and pick the default. Keep OpenGL as a fallback.
+- **Widescreen 16:9:** real widescreen (wider view), not stretching. HUD and menus stay the right shape.
+- **Pause + mute when the window loses focus**, and ignore keyboard/controller input while unfocused. This fixes the earlier stray-input bug. It's a setting, default on.
+- **Skip intro logos/movies:** a setting, default on.
+- **Borderless fullscreen + Alt+Enter.**
+- **FPS counter and screenshot hotkeys:** screenshots go to a SparkPark screenshots folder.
+
+**Batch 2: graphics quality + speed**
+- **Compiler tuning for the player's build:** `-O3`, LTO, and CPU-feature flags where safe. Benchmark them against the MSVC build.
+- **Parallel compile** in the builder, using all cores, so the first build is shorter.
+- **Shader/pipeline cache**, persisted on disk, to remove first-time stutter.
+- **Internal resolution scaling:** 1×, 2×, 3×, 4×, and native.
+- **Anti-aliasing:** off / FXAA / MSAA 2×–8×.
+
+**Batch 3: comfort + controls**
+- **Remap screen:** every action including the camera/pointer toggle, per controller type, saved per user.
+- **Controller button prompts:** show Xbox/PlayStation/keyboard glyphs instead of Wii buttons in on-screen prompts where feasible. It's a setting.
+- **Photo export:** save in-game photos (Pic0–Pic3 in the NAND save) as PNGs to a SparkPark photos folder, on save and via an "export all" option.
+- **In-game settings overlay:** a hotkey/controller combo opens it. It holds every option above. Since the builder only runs once, this is where players change settings afterwards.
+
+**Batch 4: stretch goals (research first, report before building)**
+- **60 FPS mode:** investigate how the game's logic depends on frame rate. Options: true 60 FPS logic where safe, or frame interpolation. Report the risks before implementing. Default off.
+- **Gyro aiming** (for the pointer and tilt attractions) and **rumble**, for controllers that support them.
+- **Nunchuk support.**
+
 ## Open items
 
 - Final controller mappings per attraction
