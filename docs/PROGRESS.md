@@ -226,3 +226,19 @@ The plan is option **A** in BUILDER-PLAN.md: llvm-mingw, embedded Python, a preb
   - Automated: the file picker (`SPARKPARK_TEST_ISO`) and the button presses (the page's own `press()`).
 
 **Next (phase 4, after the owner's OK):** draft the release notes, the asset list and the exact gh commands; publish only after a yes.
+
+## 2026-11-04: v0.2.0-alpha, phase 4: release
+
+**Done**
+- README and CHANGELOG updated for the builder download (`c1ee58a`).
+- Pushed `main` (`4a8e022..c1ee58a`), then the **`v0.2.0-alpha`** tag on its own (`git push origin v0.2.0-alpha`, never `--tags`). The fork's tags are only `v0.1.0-alpha` and `v0.2.0-alpha`.
+- **Published [SparkPark v0.2.0-alpha](https://github.com/Dvrkie13/SparkPark/releases/tag/v0.2.0-alpha)** as a pre-release with the owner-approved notes (`D:\SparkPark-build\release-0.2.0\v0.2.0-alpha-notes.md`).
+- **Verified as a visitor:**
+  - The public API reports prerelease=true, draft=false, **1 asset**: `SparkPark-v0.2.0-alpha.zip`, 93,306,079 bytes, GitHub digest sha256 `fa461123…690d089`.
+  - A fresh download matches the audited zip byte for byte.
+  - The release page lists only that zip plus GitHub's automatic "Source code" archives.
+
+**Next**
+- Feedback from players: build times on other PCs, the WebView2 runtime on older Windows 10, and the picker/mouse/controller by hand.
+- Build Order step 5: right-stick camera/pointer (auto-switch while the game has DPD on, manual toggle, "Right stick mode" setting, indicator). Settle the Back-button conflict with Wii − first.
+- Vulkan in the builder's runtime needs `glslc` (Vulkan SDK) on the dev PC.
