@@ -202,3 +202,27 @@ The plan is option **A** in BUILDER-PLAN.md: llvm-mingw, embedded Python, a preb
 **Not yet tested by hand:** the real file picker, a mouse click, and a physical controller's A button. Automated runs used the test hooks.
 
 **Next (phase 3, after the owner's OK):** licences/notices for every component, README.txt, the zip, the audit, and a clean-folder test as a new player.
+
+## 2026-11-04: v0.2.0-alpha, phase 3: package, audit, clean test
+
+**Done**
+- **Fixes from the owner's own run.**
+  - From a USB hard drive (about 40 MB/s), "Checking disc…" sat for about 2 minutes with nothing moving. The caption now shows how far dtk has read ("Checking your disc… 66%", from its process I/O counters).
+  - Closing the builder mid-build left Python running; all children now run in a kill-on-close job object.
+  - `render()` had been clearing the design's caption pill background. Fixed, and checked against `docs/builder-*.png`.
+- **README.txt** (player guide: requirements, steps, where data goes, portable mode, `--rebuild`/Shift, never share built files, known issues, legal) and **NOTICES.txt** (every component, its folder, licence and source). Also `licenses/` with SparkPark/upstream CC0, the decomp's CC0, decomp-toolkit, llvm-mingw (LLVM), mingw-w64's COPYING files, Python, Baloo 2 OFL, the WebView2 SDK and an Icons8 note. mingw-w64's notices are also kept in `toolchain\llvm-mingw\x86_64-w64-mingw32\share\mingw32\`.
+- **`SparkPark-v0.2.0-alpha.zip`**: 93.3 MB, 3,514 files, 351 MB unpacked, sha256 `fa461123…690d089`. Built by `builder/package.py stage` + `zip`.
+- **Audit** (`builder/audit.py`; report and full file list in `D:\SparkPark-build\release-0.2.0\audit\`). **PASS:**
+  - 0 files identical to any of the disc's files or `main.dol`.
+  - **0 files containing main.dol code.** All 2,670,002 non-trivial 32-byte windows of its code sections were searched, which catches any copy of 48+ bytes.
+  - main.dol data matches are only trivial tables. The longest run in files made for this release is 384 bytes (MSVC CRT's `80 81 … FF` identity table in SparkPark.exe). Others: the font's ascending glyph numbers, the standard JPEG zig-zag table in the runtime, and class names in the public `symbols.txt`/`hooks.txt`. Official downloads show at most 512 bytes (256-entry 16-bit lookup tables in Python's DLLs). Two code-section hits during development were the Metrowerks TRK banner string in dtk.exe.
+  - 0 recompiler output markers outside the recompiler's own source; 0 generated files; 0 game-format extensions or signatures.
+  - The runtime library has 39 objects, all from `recomp/runtime|patches|boot|gpu`. It defines only the 72 hand-written hooks of `hooks.txt` and refers to 39 game functions by address.
+  - Every exe/dll/pyd is byte-identical to its official download (llvm-mingw, Python, dtk), except SparkPark.exe.
+- **Clean test**, as a new player: Expand-Archive into a new `D:\SparkPark-cleantest`, then `SparkPark.exe`. To keep data on D: per the owner's rule, `portable.txt` was added; by default data goes to `%LOCALAPPDATA%\SparkPark`.
+  - Disc check, then a 54 s build, then Play. The game reached the park (Chatot).
+  - The second start went straight into the game (97 ms, no builder page).
+  - The work folder was removed after the build; the data folder is 1.42 GB.
+  - Automated: the file picker (`SPARKPARK_TEST_ISO`) and the button presses (the page's own `press()`).
+
+**Next (phase 4, after the owner's OK):** draft the release notes, the asset list and the exact gh commands; publish only after a yes.

@@ -40,6 +40,9 @@ def stage_llvm(src, dst):
         if not any(s in os.path.basename(f) for s in LLVM_RT_SKIP):
             shutil.copy2(f, os.path.join(dst, rel, "lib", "windows"))
     copytree(os.path.join(src, "x86_64-w64-mingw32", "lib"), os.path.join(dst, "x86_64-w64-mingw32", "lib"))
+    # mingw-w64's license notices, which must travel with its files.
+    copytree(os.path.join(src, "x86_64-w64-mingw32", "share", "mingw32"),
+             os.path.join(dst, "x86_64-w64-mingw32", "share", "mingw32"))
     copytree(os.path.join(src, "include"), os.path.join(dst, "include"), shutil.ignore_patterns("c++"))
 
 
@@ -53,6 +56,9 @@ def stage(a):
     copytree(os.path.join(HERE, "ui"), os.path.join(out, "ui"))
     os.makedirs(os.path.join(out, "tools"))
     shutil.copy2(a.dtk, os.path.join(out, "tools", "dtk.exe"))
+    shutil.copy2(os.path.join(ROOT, "recomp", "assets", "dtk_license.txt"), os.path.join(out, "tools"))
+    for f in ("README.txt", "NOTICES.txt"):
+        shutil.copy2(os.path.join(HERE, "assets", f), out)
     copytree(os.path.join(ROOT, "recomp", "assets", "prompts"), os.path.join(out, "prompts"))
     # The recompiler: upstream's scripts, the public function list and the hook list, plus the
     # runtime headers the generated C includes, laid out as in the repository.
@@ -83,14 +89,49 @@ def stage(a):
     for f in ("libsparkpark_runtime.a", "app_manifest.o"):
         shutil.copy2(os.path.join(rt_tmp, f), os.path.join(out, "runtime"))
     shutil.rmtree(rt_tmp, ignore_errors=True)
+    # Every bundled component's license, in one place (NOTICES.txt lists them).
+    lic = os.path.join(out, "licenses")
+    os.makedirs(os.path.join(lic, "llvm-mingw", "mingw-w64"))
+    shutil.copy2(os.path.join(ROOT, "LICENSE"), os.path.join(lic, "SparkPark-CC0.txt"))
+    for f in glob.glob(os.path.join(HERE, "assets", "licenses", "*.txt")):
+        shutil.copy2(f, lic)
+    shutil.copy2(os.path.join(ROOT, "recomp", "assets", "dtk_license.txt"), os.path.join(lic, "decomp-toolkit.txt"))
+    shutil.copy2(os.path.join(a.llvm, "LICENSE.TXT"), os.path.join(lic, "llvm-mingw", "LICENSE.TXT"))
+    for f in glob.glob(os.path.join(a.llvm, "x86_64-w64-mingw32", "share", "mingw32", "COPYING*")):
+        shutil.copy2(f, os.path.join(lic, "llvm-mingw", "mingw-w64"))
+    shutil.copy2(os.path.join(a.python, "LICENSE.txt"), os.path.join(lic, "python-LICENSE.txt"))
+    shutil.copy2(os.path.join(HERE, "fonts", "OFL.txt"), os.path.join(lic, "Baloo2-OFL.txt"))
+    with open(os.path.join(lic, "Icons8.txt"), "w", newline="\r\n") as f:
+        f.write("The button prompt icons in prompts\\ are by Icons8 (https://icons8.com),\n"
+                "as credited by PokePark Wiicompiled.\n")
     total = sum(os.path.getsize(os.path.join(d, f)) for d, _, fs in os.walk(out) for f in fs)
     print(f"staged {out}: {total / 1e6:.1f} MB")
+    return 0
+
+
+def make_zip(a):
+    """The release zip: the staged folder under one top-level folder."""
+    import zipfile
+    top = os.path.splitext(os.path.basename(a.out))[0]
+    if os.path.exists(a.out):
+        os.remove(a.out)
+    n = 0
+    with zipfile.ZipFile(a.out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+        for d, _, files in os.walk(a.stage):
+            for f in sorted(files):
+                p = os.path.join(d, f)
+                z.write(p, os.path.join(top, os.path.relpath(p, a.stage)))
+                n += 1
+    print(f"zip: {a.out}: {n} files, {os.path.getsize(a.out) / 1e6:.1f} MB")
     return 0
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
+    zp = sub.add_parser("zip")
+    zp.add_argument("--stage", required=True)
+    zp.add_argument("--out", required=True)
     s = sub.add_parser("stage")
     s.add_argument("--out", required=True)
     s.add_argument("--launcher", required=True)
@@ -98,7 +139,7 @@ def main() -> int:
     s.add_argument("--python", required=True)
     s.add_argument("--dtk", required=True)
     a = ap.parse_args()
-    return {"stage": stage}[a.cmd](a)
+    return {"stage": stage, "zip": make_zip}[a.cmd](a)
 
 
 if __name__ == "__main__":

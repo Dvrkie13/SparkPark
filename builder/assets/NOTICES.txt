@@ -1,0 +1,78 @@
+SparkPark v0.2.0-alpha: components and their licenses
+=====================================================
+
+Every component in this folder, where it is, and its license. The full
+license texts are in the licenses folder (and, where a component ships its
+own, beside it too).
+
+SparkPark itself
+  SparkPark.exe, ui\ (except the font), recompiler\tools\sparkpark\,
+  runtime\ (the SparkPark additions)
+  License: CC0 1.0 (licenses\SparkPark-CC0.txt)
+  https://github.com/Dvrkie13/SparkPark
+
+PokePark Wiicompiled, by MildRain479
+  The game port SparkPark is built on: the static recompiler
+  (recompiler\tools\recomp\), the runtime compiled into
+  runtime\libsparkpark_runtime.a (CPU, hardware replacement, renderer,
+  sound, input, options), recompiler\recomp\ and the button prompt icons'
+  layout.
+  License: CC0 1.0 (licenses\SparkPark-CC0.txt)
+  https://github.com/MildRain479/PokePark-Wiicompiled
+
+PokePark Wii decompilation, by Seph De Busser and contributors
+  recompiler\config\R8AE01\symbols.txt (the function list; names and
+  addresses only)
+  License: CC0 1.0 (licenses\pokepark-wii-decomp-CC0.txt)
+  https://github.com/SephDB/pokepark-wii-decomp
+
+decomp-toolkit (dtk) 1.6.2, by Luke Street and contributors
+  tools\dtk.exe (reads and checks disc images)
+  License: MIT or Apache-2.0 (licenses\decomp-toolkit.txt)
+  https://github.com/encounter/decomp-toolkit
+
+llvm-mingw 20261020 (clang/LLVM 23.1.4, lld, compiler-rt, libc++, libunwind),
+by Martin Storsjo, the LLVM Project and contributors
+  toolchain\llvm-mingw\ (the compiler that builds the game on your PC),
+  trimmed to the x86_64 Windows target
+  License: Apache-2.0 with LLVM Exceptions
+  (licenses\llvm-mingw\LICENSE.TXT)
+  https://github.com/mstorsjo/llvm-mingw
+
+mingw-w64 (headers, import libraries and C runtime startup files, inside
+llvm-mingw)
+  toolchain\llvm-mingw\include\, toolchain\llvm-mingw\x86_64-w64-mingw32\
+  License: Zope Public License 2.1, except parts prominently marked as
+  public domain, BSD or LGPL; winpthreads is MIT-style
+  (licenses\llvm-mingw\mingw-w64\COPYING*; also
+  toolchain\llvm-mingw\x86_64-w64-mingw32\share\mingw32\)
+  https://www.mingw-w64.org
+
+Python 3.15.2 (Windows embeddable package), by the Python Software
+Foundation
+  toolchain\python\ (runs the recompiler)
+  License: PSF License Agreement (licenses\python-LICENSE.txt; also
+  toolchain\python\LICENSE.txt)
+  https://www.python.org
+
+Baloo 2, by Ek Type (The Baloo 2 Project Authors)
+  ui\fonts\Baloo2-wght.ttf (the builder's font)
+  License: SIL Open Font License 1.1 (licenses\Baloo2-OFL.txt; also
+  ui\fonts\OFL.txt)
+  https://github.com/EkType/Baloo2
+
+Microsoft Edge WebView2 SDK 1.0.4314.35 (loader, linked into SparkPark.exe)
+  License: BSD-style, Microsoft (licenses\WebView2-SDK-LICENSE.txt)
+  https://www.nuget.org/packages/Microsoft.Web.WebView2
+  The WebView2 Runtime itself is part of Windows and is not included here.
+
+Button prompt icons, by Icons8
+  prompts\
+  Icons by Icons8 (https://icons8.com), as credited by PokePark
+  Wiicompiled.
+
+Microsoft Visual C++ runtime
+  Statically linked into SparkPark.exe by the Microsoft C/C++ compiler.
+
+Not included: anything from PokePark Wii. The game's code and files come
+from your own disc and stay on your PC.
