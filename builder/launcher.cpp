@@ -103,6 +103,22 @@ static void log_line(const std::string& s) {
     std::ofstream(log_path(), std::ios::app | std::ios::binary) << s << "\n";
 }
 
+// The process run() is waiting on, for a tick that wants its I/O counters.
+static thread_local HANDLE tChild;
+
+// Every child (dtk, Python, clang) goes in this job, which ends them when the launcher closes:
+// closing the window mid-build must not leave a build running in the background.
+static HANDLE children_job() {
+    static HANDLE job = [] {
+        HANDLE j = CreateJobObjectW(nullptr, nullptr);
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION li{};
+        li.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if (j) SetInformationJobObject(j, JobObjectExtendedLimitInformation, &li, sizeof(li));
+        return j;
+    }();
+    return job;
+}
+
 // Runs a command; each line of its output goes to the log and to on_line; tick runs about
 // every 200 ms while it runs. Returns the exit code, or -1 if it couldn't start.
 static int run(const std::wstring& cmd, const fs::path& cwd, const std::map<std::wstring, std::wstring>& extra_env,
@@ -133,14 +149,18 @@ static int run(const std::wstring& cmd, const fs::path& cwd, const std::map<std:
     PROCESS_INFORMATION pi{};
     std::wstring line = cmd;
     log_line("$ " + narrow(cmd));
-    BOOL ok = CreateProcessW(nullptr, line.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
-                             envblock.data(), cwd.empty() ? nullptr : cwd.c_str(), &si, &pi);
+    BOOL ok = CreateProcessW(nullptr, line.data(), nullptr, nullptr, TRUE,
+                             CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT | CREATE_SUSPENDED, envblock.data(),
+                             cwd.empty() ? nullptr : cwd.c_str(), &si, &pi);
     CloseHandle(wr);
     if (!ok) {
         CloseHandle(rd);
         log_line("  (could not start)");
         return -1;
     }
+    // In the job before it runs, so its own children (clang under Python) are in it too.
+    if (HANDLE job = children_job()) AssignProcessToJobObject(job, pi.hProcess);
+    ResumeThread(pi.hThread);
     std::string pending;
     auto drain = [&]() {
         DWORD avail = 0, got = 0;
@@ -159,10 +179,12 @@ static int run(const std::wstring& cmd, const fs::path& cwd, const std::map<std:
             }
         }
     };
+    tChild = pi.hProcess;
     while (WaitForSingleObject(pi.hProcess, 200) == WAIT_TIMEOUT) {
         drain();
         if (tick) tick();
     }
+    tChild = nullptr;
     drain();
     if (!pending.empty()) {
         log_line("  " + pending);
@@ -209,7 +231,20 @@ static void verify_thread(std::wstring iso) {
         snprintf(msg, sizeof msg, "Couldn't start tools\\dtk.exe, which reads disc images. Is the SparkPark folder complete?");
         r = DISC_UNREADABLE;
     } else if ((r = disc_check_info(info.c_str(), &file, msg, sizeof msg)) == DISC_OK) {
-        run(q(dtk) + L" disc verify " + q(iso), {}, {}, nullptr, nullptr, &verify);
+        // Hashing reads the whole image once: from a USB hard drive that's minutes, so show how
+        // far dtk has read (its I/O counters against the file's size).
+        int last = -1;
+        run(q(dtk) + L" disc verify " + q(iso), {}, {}, nullptr,
+            [&] {
+                IO_COUNTERS io{};
+                if (!tChild || file.size <= 0 || !GetProcessIoCounters(tChild, &io)) return;
+                int pct = (int)std::min<double>(99, 100.0 * io.ReadTransferCount / file.size);
+                if (pct != last) {
+                    last = pct;
+                    post(R"({"type":"verifyProgress","pct":)" + std::to_string(pct) + "}");
+                }
+            },
+            &verify);
         r = disc_check_verify(info.c_str(), verify.c_str(), &file, msg, sizeof msg);
     }
     log_line(r == DISC_OK ? "disc OK" : std::string("disc rejected: ") + msg);
@@ -445,7 +480,8 @@ static LRESULT CALLBACK wnd_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             if (MessageBoxW(w, L"SparkPark is still working. Stop and close anyway?", L"SparkPark",
                             MB_YESNO | MB_ICONQUESTION) != IDYES)
                 return 0;
-            ExitProcess(0);  // the build's child processes end with the pipe
+            log_line("closed by the player during " + std::string(gIso.empty() ? "the disc check" : "the build"));
+            ExitProcess(0);  // the job object ends dtk / Python / clang with us
         }
         DestroyWindow(w);
         return 0;

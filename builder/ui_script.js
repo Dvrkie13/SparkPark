@@ -7,9 +7,10 @@
 //                   {type:'progress', pct, stage: 'extract'|'recompile'|'link'},
 //                   {type:'done'}, {type:'buildError', reason}.
 (function(){
-  var phase='upload', pct=0, stage='extract', error='', retry=false;
+  var phase='upload', pct=0, stage='extract', error='', retry=false, vpct=-1;
   var $=function(id){return document.getElementById(id)};
   var face=$('face'), btn=$('mainBtn');
+  var capBg=$('capP').style.background;  // the design's caption pill; errors swap in a red one
   var host=window.chrome&&window.chrome.webview;
   var COLORS={blue:['#4A86E0','#1F4A94'],orange:['#EE6A2C','#7A2A0C'],teal:['#35B0A0','#15524B']};
   function send(o){if(host)host.postMessage(o)}
@@ -22,7 +23,7 @@
     $('buildLabel').textContent=retry?'Retry Build':'Build Recomp';
     var cap='';
     if(error)cap=error;
-    else if(phase==='verifying')cap='Checking your disc…';
+    else if(phase==='verifying')cap='Checking your disc…'+(vpct>=0?' '+vpct+'%':'');
     else if(phase==='build')cap='Disc verified · ready to build';
     else if(phase==='building')cap=stage==='extract'?'Extracting your disc…':stage==='link'?'Linking the runtime…':'Recompiling game code…';
     else if(phase==='play')cap='Build complete · ready to play';
@@ -31,7 +32,7 @@
     var wasHidden=capP.parentNode.style.display==='none';
     show('showCaption',visible);
     if(wasHidden&&visible){capP.style.animation='none';void capP.offsetWidth;capP.style.animation='';}
-    capP.style.background=error?'rgba(130,24,10,.82)':'';
+    capP.style.background=error?'rgba(130,24,10,.82)':capBg;
     show('showCheck',!error&&(phase==='build'||phase==='play'));
     $('caption').textContent=cap;
     $('pct').textContent=pct; $('bar').style.width=pct+'%';
@@ -47,7 +48,8 @@
   }
   if(host)host.addEventListener('message',function(e){
     var m=e.data;
-    if(m.type==='verifying'){phase='verifying';error='';retry=false;}
+    if(m.type==='verifying'){phase='verifying';error='';retry=false;vpct=-1;}
+    else if(m.type==='verifyProgress'){vpct=m.pct;$('caption').textContent='Checking your disc… '+vpct+'%';if(vpct>=50)send({cmd:'state',name:'verifying-half'});return;}
     else if(m.type==='verified'){phase='build';error='';}
     else if(m.type==='discError'){phase='upload';error=m.reason;}
     else if(m.type==='progress'){phase='building';error='';pct=Math.max(0,Math.min(100,Math.floor(m.pct)));stage=m.stage;}
