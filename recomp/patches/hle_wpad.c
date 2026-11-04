@@ -49,6 +49,10 @@ static struct {
 
 static uint32_t sReports;
 int (*g_host_script_input)(uint32_t held);
+
+/* SparkPark: the buttons remote 0 held at its last read (HOST_PAD_*),
+ * scripted ones included, for holding + to skip a movie (hle_game.c). */
+uint32_t g_wpad0_held;
 static int sConnecting, sConnected;
 
 static int connected(int32_t chan) { return chan == 0 && sConnected; }
@@ -221,6 +225,7 @@ void f_802488A0(ppc_t* c) {
     if (on && chan == 0) {
         uint32_t scripted = script_held();
         if (!g_host_script_input || !g_host_script_input(scripted)) held |= scripted;
+        g_wpad0_held = held;
     }
     if (on && chan == 0 && (motion = hle_motion(held, sReports, acc, dots)) != 0) {
         /* In minigames, the remote's motion as each asks (hle_motion.c). */

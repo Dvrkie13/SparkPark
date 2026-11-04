@@ -13,6 +13,9 @@
 #include <string.h>
 
 #include "hle.h"
+#include "host_input.h"
+
+extern uint32_t g_wpad0_held; /* hle_wpad.c */
 
 /* Scenes, as indexed by the scene table (0x80337FA8). */
 enum { SCENE_PARK, SCENE_ATTRACTION, SCENE_START_MENU, SCENE_LOBBY, SCENE_STRAP, SCENE_HOLD, SCENE_CHECK_DATA };
@@ -236,6 +239,27 @@ enum { THP_SYS_OPEN = 0, THP_SYS_STATE = 5, THP_PLAYING = 2, THP_FINISHED = 3 };
 #define SKIP_AFTER_POLLS 60
 static int sMovieLoops, sMoviePolls;
 
+/* SparkPark: holding + skips a movie that doesn't loop (the Skip movies
+ * setting, on by default): held for HOLD_TO_SKIP seconds, with the
+ * progress shown meanwhile (hud_win32.c), and let go of early, nothing
+ * happens. As with RECOMP_SKIP_MOVIES, not before the movie has played
+ * SKIP_AFTER_POLLS polls (about a second). Off, + does what it did. */
+#define HOLD_TO_SKIP 0.8
+static int sMovieSkip = 1;
+static uint64_t sHoldStart, sLastPoll; /* time base: + pressed (0: not held), the last poll while playing */
+
+void hle_set_movie_skip(int on) { sMovieSkip = on != 0; }
+
+/* How far through holding + to skip, 0-100, or -1 if no movie it can
+ * skip is playing. */
+int hle_movie_skip_progress(void) {
+    double held;
+    if (!sMovieSkip || sMovieLoops || !sLastPoll || ppc_timebase() - sLastPoll > PPC_TB_HZ / 4) return -1;
+    if (!sHoldStart) return 0;
+    held = (double)(ppc_timebase() - sHoldStart) / PPC_TB_HZ / HOLD_TO_SKIP;
+    return held >= 1 ? 100 : (int)(held * 100);
+}
+
 /* int ThpManager::virt0x18(int sub, u32* args) */
 void f_801776E0(ppc_t* c) {
     static int skip = -1;
@@ -247,8 +271,26 @@ void f_801776E0(ppc_t* c) {
     if (sub == THP_SYS_OPEN) {
         sMovieLoops = LD32(args + 4) != 0;
         sMoviePolls = 0;
+        sHoldStart = sLastPoll = 0;
     }
     f_801776E0_orig(c);
-    if (sub == THP_SYS_STATE && skip && !sMovieLoops && c->r[3] == THP_PLAYING && ++sMoviePolls > SKIP_AFTER_POLLS)
+    if (sub != THP_SYS_STATE || sMovieLoops) return;
+    if (c->r[3] != THP_PLAYING) {
+        sLastPoll = sHoldStart = 0;
+        return;
+    }
+    ++sMoviePolls;
+    if (skip && sMoviePolls > SKIP_AFTER_POLLS) {
         c->r[3] = THP_FINISHED;
+        return;
+    }
+    if (!sMovieSkip) return;
+    sLastPoll = ppc_timebase();
+    if (!(g_wpad0_held & HOST_PAD_PLUS)) sHoldStart = 0;
+    else if (!sHoldStart) sHoldStart = sLastPoll;
+    if (hle_movie_skip_progress() >= 100 && sMoviePolls > SKIP_AFTER_POLLS) {
+        HLE_LOG("movie skipped (+ held)");
+        sLastPoll = sHoldStart = 0;
+        c->r[3] = THP_FINISHED;
+    }
 }

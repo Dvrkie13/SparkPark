@@ -36,6 +36,7 @@ int display_scale(void); /* gx_frames.c: as applied */
 int display_msaa(void);
 int display_renderer(void); /* RENDERER_*: the one drawing */
 int gxb_display_hz(void);
+int hle_widescreen(void); /* hle_nand.c: as the game was started */
 
 /* ------------------------------------------------------------------------ */
 /* What's on it */
@@ -68,8 +69,11 @@ static const Row kDisplay[] = {
     {ROW_SETTING, SET_SCALE, "Resolution"},
     {ROW_SETTING, SET_MSAA, "Anti-aliasing"},     {ROW_SETTING, SET_FRAME_RATE, "Frame rate"},
     {ROW_SETTING, SET_FOV, "Field of view"},       {ROW_SETTING, SET_ANISO, "Filtering"},
+    {ROW_SETTING, SET_WIDESCREEN, "Widescreen"},
 #ifndef __ANDROID__
     {ROW_SETTING, SET_RENDERER, "Renderer"},
+    {ROW_SETTING, SET_SHOW_FPS, "Show FPS"},
+    {ROW_SETTING, SET_BACKGROUND_PAUSE, "Pause in background"},
 #endif
     {ROW_CLOSE, 0, "Close game"},
 };
@@ -80,6 +84,7 @@ static const Row kGameplay[] = {
     {ROW_SETTING, SET_DAMAGE_DEALT, "Damage dealt"},
     {ROW_SETTING, SET_DAMAGE_TAKEN, "Damage taken"},
     {ROW_SETTING, SET_CHASE_SPEED, "Chase speed"},
+    {ROW_SETTING, SET_MOVIE_SKIP, "Hold + to skip movies"},
 };
 static const char* const kAction[ACT_COUNT] = {
     "Up", "Down", "Left", "Right", "2: Jump", "1: Dash", "A: Thunderbolt", "B: Camera", "+: Pad", "-: Map", "HOME",
@@ -154,6 +159,13 @@ static void setting_text(int which, char* out, size_t n) {
         snprintf(out, n, "%s%s", g_settings.renderer == RENDERER_VULKAN ? "Vulkan" : "OpenGL",
                  g_settings.renderer != display_renderer() ? " (restart)" : "");
         break;
+    case SET_WIDESCREEN:
+        snprintf(out, n, "%s%s", g_settings.widescreen ? "16:9" : "4:3",
+                 g_settings.widescreen != hle_widescreen() ? " (restart)" : "");
+        break;
+    case SET_SHOW_FPS: snprintf(out, n, g_settings.show_fps ? "On" : "Off"); break;
+    case SET_BACKGROUND_PAUSE: snprintf(out, n, g_settings.background_pause ? "On" : "Off"); break;
+    case SET_MOVIE_SKIP: snprintf(out, n, g_settings.movie_skip ? "On" : "Off"); break;
     case SET_RUMBLE: {
         static const char* const kRumble[4] = {"Off", "Light", "Normal", "Strong"};
         snprintf(out, n, "%s", kRumble[g_settings.rumble & 3]);

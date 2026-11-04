@@ -72,6 +72,14 @@ static void push(const int16_t* lr, int frames) {
     }
 }
 
+/* SparkPark: holds the device while the game is paused (window_win32.c),
+ * so what's queued doesn't play out; it carries on where it stopped. */
+void audio_pause(int paused) {
+    if (!sOut) return;
+    if (paused) waveOutPause(sOut);
+    else if (!sPriming) waveOutRestart(sOut);
+}
+
 void audio_init(void) {
     WAVEFORMATEX fmt;
     const char* e = getenv("RECOMP_AUDIO");

@@ -16,7 +16,8 @@ What you need
 - The Microsoft Edge WebView2 Runtime, for the builder window. Windows 11 and
   almost every Windows 10 PC have it; if SparkPark says it's missing, get it
   from https://go.microsoft.com/fwlink/p/?LinkId=2124703
-- A graphics card with OpenGL 3.3.
+- A graphics card with Vulkan 1.3 (the default renderer) or OpenGL 3.3 (used
+  if Vulkan can't start).
 - Your own copy of PokePark Wii: Pikachu's Adventure, USA, first release
   (R8AE01, Rev 0), as a full 1:1 disc image (ISO, RVZ, WBFS, WIA, CISO...).
 - About 2 GB of free disk space for the built game, plus about 0.4 GB for
@@ -44,6 +45,14 @@ Controls: keyboard and mouse or an Xbox-style controller. The builder works
 with the mouse, Enter/Space or the controller's A button. In the game,
 Options are in the pause menu (the PokePark Pad) and on the save file screen.
 
+Keys in the game:
+  Alt+Enter   fullscreen (borderless) or windowed
+  F3          frame rate counter on or off
+  F12         screenshot, saved in Pictures\SparkPark
+  hold +      skip a movie (+ is P or the controller's Start by default)
+The game pauses while another window is in front (Options > Display >
+Pause in background).
+
 
 Where your game and saves are kept
 ----------------------------------
@@ -70,13 +79,11 @@ Known issues (alpha)
 --------------------
 - Tested on one PC so far. Please report problems on GitHub:
   https://github.com/Dvrkie13/SparkPark/issues
-- The renderer is OpenGL; the Vulkan renderer isn't in this build.
 - From the game port: no fog, indirect texturing, dynamic lighting, logic
   ops, z-textures, or lines and points yet; no reverb; the Wii Remote
   speaker is silent; the pointer works only in Rayquaza's and Rotom's
   minigames; no Nunchuk.
-- The game window takes focus when it opens, and a connected controller's
-  buttons count even while the window is in the background.
+- The game window takes focus when it opens.
 
 
 Legal

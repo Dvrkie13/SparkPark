@@ -242,3 +242,41 @@ The plan is option **A** in BUILDER-PLAN.md: llvm-mingw, embedded Python, a preb
 - Feedback from players: build times on other PCs, the WebView2 runtime on older Windows 10, and the picker/mouse/controller by hand.
 - Build Order step 5: right-stick camera/pointer (auto-switch while the game has DPD on, manual toggle, "Right stick mode" setting, indicator). Settle the Back-button conflict with Wii − first.
 - Vulkan in the builder's runtime needs `glslc` (Vulkan SDK) on the dev PC.
+
+## 2026-11-04: Roadmap Batch 1 (profiling, Vulkan, quality of life)
+
+Numbers and methods: `docs/PERFORMANCE.md`.
+
+**Done**
+1. **Profiling.**
+   - Upstream's `RECOMP_FPS` and `RECOMP_PROFILE` are the frame-time breakdown, behind environment flags.
+   - `SPARKPARK_DEBUG_INFO=1` gives the clang build a PDB. The profiler's split counts four helpers it missed.
+   - **Baseline** (OpenGL, park): 30 fps at 70% busy. Graphics is 55% of samples, mostly a 13.5 ms present wait in the driver; game code is 12%. Clang and MSVC are within 1%.
+   - **Attraction: not measured.** `RECOMP_ATTRACTION` crashes both builds on an early save (a guest fault in `load_attraction_ranking`, upstream behaviour).
+2. **Vulkan.**
+   - Vulkan SDK 1.4.363.1 in `D:\VulkanSDK` (the owner ran LunarG's signed installer).
+   - Upstream already defaults to Vulkan, with a fallback to OpenGL.
+   - Park: 22% busy against 73%. The 60 fps mode holds 60.0 against OpenGL's 35.8.
+   - **Recommendation: keep Vulkan as the default.**
+   - `build_player.py runtime` now builds the Vulkan device into the shipped runtime. Players need no SDK.
+   - `package.py stage` refuses an OpenGL-only runtime without `--opengl-only`.
+   - `NOTICES.txt` and `licenses/` cover the Vulkan headers (MIT).
+3. **Widescreen.** Upstream's native 16:9 mode (HUD and menus laid out by the game, not stretched) is now the Widescreen setting. On by default; 4:3 when off, from the next start.
+4. **Pause in background** (on).
+   - At each frame, while another window is in front, the game waits with its clock stopped, its sound held, rumble off and no input taken.
+   - `ppc_timebase_pause` now works on Windows too.
+5. **Hold + to skip movies** (on), as the owner asked: hold + (P / Start) for 0.8 s; a "Skipping" bar shows in the bottom right.
+   - The boot itself has no logos or movies. Upstream already shortened the strap screen, and Hold must run its course, so the boot is unchanged.
+6. **Borderless fullscreen and Alt+Enter:** already upstream's. Checked through the launcher (2560x1440).
+7. **FPS counter** (F3 / Show FPS) and **F12 screenshots** (PNG in `Pictures\SparkPark`, written on a thread).
+   - The counter and the skip bar are small images laid over the picture, in both renderers.
+   - Neither cost is measurable.
+- **The player path:**
+  - Launcher rebuilt. App staged (352.5 MB) and zipped (93.6 MB, not released).
+  - **Audit PASS**: 0 game code, 0 disc data. The runtime has 40 objects, `hud_win32` among them.
+  - A fresh run: disc check, build (27 s compile), play. New game, + held through the opening, on to the park, all on Vulkan.
+
+**Next**
+- Release notes and a version bump for the next release, after the owner's OK.
+- Batch 2 (graphics options). Several items in it are already upstream's (scale, MSAA, the Vulkan pipeline cache), so it's mostly FXAA and settings polish.
+- The `RECOMP_ATTRACTION` crash on early saves, if attraction profiling is wanted.

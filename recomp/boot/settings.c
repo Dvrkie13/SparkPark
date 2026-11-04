@@ -31,6 +31,8 @@ void hle_set_berry_rate(int percent);
 void hle_set_prices(int percent);
 void hle_set_damage(int dealt, int taken);
 void hle_set_chase_speed(int percent);
+void hle_set_widescreen(int on); /* hle_nand.c */
+void hle_set_movie_skip(int on); /* hle_game.c */
 
 /* The gameplay settings' choices, in order. */
 static const int kTextSpeeds[] = {1, 2, 3, 0};
@@ -53,6 +55,7 @@ static void apply_gameplay(void) {
     hle_set_prices(g_settings.prices);
     hle_set_damage(g_settings.damage_dealt, g_settings.damage_taken);
     hle_set_chase_speed(g_settings.chase_speed);
+    hle_set_movie_skip(g_settings.movie_skip);
 }
 
 #define FOV_MIN 80
@@ -203,9 +206,14 @@ void settings_save(void) {
     fprintf(f, "fov = %d ; field of view in the park, percent of the game's: %d-%d\n", g_settings.fov, FOV_MIN,
             FOV_MAX);
     fprintf(f, "aniso = %d ; anisotropic texture filtering: 1 (off), 2, 4, 8 or 16\n", g_settings.aniso);
+    fprintf(f, "widescreen = %d ; 1: the game's own 16:9 mode, 0: 4:3 as on a 4:3 TV; from the next start\n",
+            g_settings.widescreen);
 #ifdef __ANDROID__
     fprintf(f, "\n");
 #else
+    fprintf(f, "show_fps = %d ; a frame rate counter in the corner (F3 toggles it)\n", g_settings.show_fps);
+    fprintf(f, "background_pause = %d ; 1: pause, mute and take no input while the window isn't in front\n",
+            g_settings.background_pause);
     fprintf(f, "renderer = %s ; opengl or vulkan, from the next start\n\n",
             g_settings.renderer == RENDERER_VULKAN ? "vulkan" : "opengl");
 #endif
@@ -218,8 +226,9 @@ void settings_save(void) {
             g_settings.damage_dealt);
     fprintf(f, "damage_taken = %d ; damage Pikachu takes in battles, percent of the game's: 0 (none), 50, 100, 200 or 300\n",
             g_settings.damage_taken);
-    fprintf(f, "chase_speed = %d ; the speed of the Pokemon Pikachu chases, percent of the game's: 50, 75, 100, 125 or 150\n\n",
+    fprintf(f, "chase_speed = %d ; the speed of the Pokemon Pikachu chases, percent of the game's: 50, 75, 100, 125 or 150\n",
             g_settings.chase_speed);
+    fprintf(f, "movie_skip = %d ; 1: holding + skips a movie\n\n", g_settings.movie_skip);
 #ifndef __ANDROID__ /* no mouse or keyboard */
     fprintf(f, "[mouse]\n");
     fprintf(f, "sensitivity = %.2f ; camera turn, times the default\n", g_settings.mouse_sensitivity);
@@ -254,6 +263,9 @@ void settings_load(void) {
     g_settings.msaa = 1;
     g_settings.aniso = 1;
     g_settings.renderer = RENDERER_VULKAN; /* OpenGL draws if it can't start */
+    g_settings.widescreen = 1;
+    g_settings.background_pause = 1;
+    g_settings.movie_skip = 1;
     g_settings.rumble = 2;
     g_settings.touch_controls = 1;
     g_settings.text_speed = 1;
@@ -292,6 +304,9 @@ void settings_load(void) {
             if (!strcmp(name, "aniso")) g_settings.aniso = valid_aniso(atoi(p));
             if (!strcmp(name, "renderer")) g_settings.renderer = strstr(p, "vulkan") ? RENDERER_VULKAN : RENDERER_OPENGL;
             if (!strcmp(name, "frame_rate")) g_settings.frame_rate = valid_frame_rate(atoi(p));
+            if (!strcmp(name, "widescreen")) g_settings.widescreen = atoi(p) != 0;
+            if (!strcmp(name, "show_fps")) g_settings.show_fps = atoi(p) != 0;
+            if (!strcmp(name, "background_pause")) g_settings.background_pause = atoi(p) != 0;
             if (!strcmp(name, "fov")) {
                 int v = atoi(p) / 5 * 5;
                 g_settings.fov = v < FOV_MIN ? FOV_MIN : v > FOV_MAX ? FOV_MAX : v;
@@ -306,6 +321,7 @@ void settings_load(void) {
                 g_settings.damage_taken = kDamageTaken[choice(kDamageTaken, COUNT(kDamageTaken), atoi(p))];
             if (!strcmp(name, "chase_speed"))
                 g_settings.chase_speed = kChaseSpeeds[choice(kChaseSpeeds, COUNT(kChaseSpeeds), atoi(p))];
+            if (!strcmp(name, "movie_skip")) g_settings.movie_skip = atoi(p) != 0;
         } else if (!strcmp(section, "mouse")) {
             if (!strcmp(name, "sensitivity")) {
                 float s = (float)atof(p);
@@ -353,6 +369,7 @@ void settings_load(void) {
     }
     apply_frame_rate();
     hle_set_fov(g_settings.fov);
+    hle_set_widescreen(g_settings.widescreen);
     apply_gameplay();
 }
 
@@ -389,6 +406,13 @@ void settings_step(int which, int d) {
     }
     case SET_RENDERER: g_settings.renderer = !g_settings.renderer; break;
     case SET_TOUCH: g_settings.touch_controls = !g_settings.touch_controls; break;
+    case SET_WIDESCREEN: g_settings.widescreen = !g_settings.widescreen; break; /* from the next start */
+    case SET_SHOW_FPS: g_settings.show_fps = !g_settings.show_fps; break;
+    case SET_BACKGROUND_PAUSE: g_settings.background_pause = !g_settings.background_pause; break;
+    case SET_MOVIE_SKIP:
+        g_settings.movie_skip = !g_settings.movie_skip;
+        apply_gameplay();
+        break;
     case SET_RUMBLE:
         g_settings.rumble = (g_settings.rumble + d + 4) % 4;
         input_rumble_preview();

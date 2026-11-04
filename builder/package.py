@@ -50,6 +50,12 @@ def stage(a):
     out = a.out
     if os.path.exists(out):
         sys.exit(f"{out} exists; remove it first")
+    # Vulkan is the default renderer (docs/PERFORMANCE.md): a runtime built without the SDK draws with
+    # OpenGL only, which a release shouldn't do by accident.
+    sdk = os.environ.get("VULKAN_SDK")
+    if not a.opengl_only and not (sdk and os.path.exists(os.path.join(sdk, "Include", "vulkan", "vulkan.h"))):
+        sys.exit("VULKAN_SDK isn't set to a Vulkan SDK: the runtime would be OpenGL only "
+                 "(pass --opengl-only if that is what you want)")
     os.makedirs(out)
     subprocess.check_call([sys.executable, os.path.join(HERE, "make_ui.py")])
     shutil.copy2(a.launcher, os.path.join(out, "SparkPark.exe"))
@@ -138,6 +144,7 @@ def main() -> int:
     s.add_argument("--llvm", required=True)
     s.add_argument("--python", required=True)
     s.add_argument("--dtk", required=True)
+    s.add_argument("--opengl-only", action="store_true", help="allow a runtime without the Vulkan device")
     a = ap.parse_args()
     return {"stage": stage, "zip": make_zip}[a.cmd](a)
 

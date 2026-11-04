@@ -535,6 +535,7 @@ static const char* kOverlayFragmentShader =
     "void main() { o_color = texture(u_image, v_uv); }\n";
 
 static GLuint sOverlayProgram, sOverlayTex;
+static GLuint sHudTex[HUD_IMAGES]; /* SparkPark: the counter and the movie skip prompt (hud_win32.c) */
 
 static void build_overlay_program(void) {
     GLint ok;
@@ -556,6 +557,12 @@ static void build_overlay_program(void) {
     glBindTexture(GL_TEXTURE_2D, sOverlayTex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glGenTextures(HUD_IMAGES, sHudTex);
+    for (ok = 0; ok < HUD_IMAGES; ok++) {
+        glBindTexture(GL_TEXTURE_2D, sHudTex[ok]);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    }
 }
 
 /* ------------------------------------------------------------------------ */
@@ -1495,6 +1502,39 @@ static void dump_bmp(const char* path, int w, int h) {
     free(px);
 }
 
+/* Lays image (iw x ih, BGRA, top row first) over the window's picture
+ * (w x h) at window pixel (x, y): the whole window for the menu, a corner
+ * for SparkPark's frame rate counter. */
+static void overlay(GLuint tex, const uint32_t* image, int w, int h, int x, int y, int iw, int ih) {
+    p_glBindFramebuffer(GL_FRAMEBUFFER, sWinFbo);
+    p_glUseProgram(sOverlayProgram);
+    p_glBindVertexArray(sCopyVao);
+    p_glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, iw, ih, 0, GL_BGRA, GL_UNSIGNED_BYTE, image);
+    glViewport(x, h - y - ih, iw, ih);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_BLEND);
+    p_glBlendEquation(GL_FUNC_ADD);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glDisable(GL_BLEND);
+    glViewport(0, 0, w, h);
+    p_glUseProgram(sProgram);
+    p_glBindVertexArray(sVao);
+}
+
+/* SparkPark: a screenshot (F12) of the window's picture as drawn so far. */
+static void screenshot(int w, int h) {
+    uint8_t* px = (uint8_t*)malloc((size_t)w * h * 4);
+    if (!px) return;
+    p_glBindFramebuffer(GL_READ_FRAMEBUFFER, sWinFbo);
+    glReadPixels(0, 0, w, h, GL_BGRA_EXT, GL_UNSIGNED_BYTE, px);
+    screenshot_save(px, w, h, (size_t)w * 4, 0, 1);
+    free(px);
+}
+
 static int gl_present(int x, int y, int cw, int ch, int may_drop) {
     int w, h, dw, dh, dropped;
     double aspect;
@@ -1523,22 +1563,14 @@ static int gl_present(int x, int y, int cw, int ch, int may_drop) {
                         (w - dw) / 2 + dw, (h - dh) / 2 + dh, GL_COLOR_BUFFER_BIT, GL_LINEAR);
     {
         const uint32_t* menu = menu_draw(w, h);
-        if (menu) {
-            p_glBindFramebuffer(GL_FRAMEBUFFER, sWinFbo);
-            p_glUseProgram(sOverlayProgram);
-            p_glBindVertexArray(sCopyVao);
-            p_glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, sOverlayTex);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE, menu);
-            glDisable(GL_DEPTH_TEST);
-            glDisable(GL_CULL_FACE);
-            glEnable(GL_BLEND);
-            p_glBlendEquation(GL_FUNC_ADD);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-            glDrawArrays(GL_TRIANGLES, 0, 3);
-            glDisable(GL_BLEND);
-            p_glUseProgram(sProgram);
-            p_glBindVertexArray(sVao);
+        int hx, hy, hw, hh, i;
+        const uint32_t* hud;
+        if (menu) overlay(sOverlayTex, menu, w, h, 0, 0, w, h);
+        /* SparkPark: a screenshot has the menus, but not the counter or the
+         * skip prompt. */
+        if (screenshot_pending()) screenshot(w, h);
+        for (i = 0; i < HUD_IMAGES; i++) {
+            if ((hud = hud_draw(i, w, h, &hx, &hy, &hw, &hh)) != NULL) overlay(sHudTex[i], hud, w, h, hx, hy, hw, hh);
         }
     }
     if (sDumpDir && sPresented >= sDumpFrom && sPresented % (unsigned)sDumpEvery == 0 && !sChain) {

@@ -499,7 +499,8 @@ static void memory_barrier(VkCommandBuffer cb) {
 /* Textures: numbered places in the shaders' array */
 
 #define MAX_TEXTURES 16384 /* as the shaders declare */
-enum { TEX_WHITE, TEX_EFB, TEX_MENU, TEX_FIRST };
+/* TEX_HUD: SparkPark's counter and movie skip prompt (hud_win32.c), two in all. */
+enum { TEX_WHITE, TEX_EFB, TEX_MENU, TEX_HUD, TEX_FIRST = TEX_HUD + 2 };
 
 typedef struct Tex {
     Image im;
@@ -1523,8 +1524,14 @@ static void end_slot(int acquired, uint32_t image, int dump, int dw, int dh) {
     if (dump) {
         char path[512];
         CHECK(vkWaitForFences(sDev, 1, &S->fence, VK_TRUE, UINT64_MAX));
-        snprintf(path, sizeof(path), "%s/frame_%05u.bmp", sDumpDir, sPresented);
-        write_bmp(path, sReadback.map, dw, dh);
+        if (dump & 1) {
+            snprintf(path, sizeof(path), "%s/frame_%05u.bmp", sDumpDir, sPresented);
+            write_bmp(path, sReadback.map, dw, dh);
+        }
+#ifndef __ANDROID__
+        /* SparkPark: a screenshot (F12), the window's picture as RGBA. */
+        if (dump & 2) screenshot_save((const uint8_t*)sReadback.map, dw, dh, (size_t)dw * 4, 1, 0);
+#endif
     }
     sSlot = (sSlot + 1) % SLOTS;
     S = &sSlots[sSlot];
@@ -2800,13 +2807,20 @@ static void vk_copy(int target, int x, int y, int w, int h, int fmt, int intensi
 }
 
 static int vk_present(int x, int y, int cw, int ch, int may_drop) {
-    int w, h, dw, dh, acquired = 0, dropped = 0, dump;
+    int w, h, dw, dh, acquired = 0, dropped = 0, dump, hx[2] = {0}, hy[2] = {0}, hw[2] = {0}, hh[2] = {0}, i;
+    const uint32_t* hud[2] = {NULL, NULL};
     uint32_t image = 0;
     double aspect;
     Quad q;
     win_size(&w, &h);
     end_efb();
+    /* 1: RECOMP_GX_DUMP's file; 2: SparkPark's screenshot (F12). */
     dump = sDumpDir && sPresented >= sDumpFrom && sPresented % (unsigned)sDumpEvery == 0 && w > 0 && h > 0;
+#ifndef __ANDROID__
+    if (w > 0 && h > 0 && screenshot_pending()) dump |= 2;
+    for (i = 0; i < HUD_IMAGES && i < 2; i++) /* not in a screenshot */
+        hud[i] = w > 0 && h > 0 && !(dump & 2) ? hud_draw(i, w, h, &hx[i], &hy[i], &hw[i], &hh[i]) : NULL;
+#endif
     if (w > 0 && h > 0) {
         const uint32_t* menu;
         VkRenderingAttachmentInfo ca = {VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
@@ -2839,6 +2853,18 @@ static int vk_present(int x, int y, int cw, int ch, int may_drop) {
                 set_texture(TEX_MENU);
             }
             if (!same) upload(S->up, m, w, h, 1, (const uint8_t*)menu);
+        }
+        for (i = 0; i < 2; i++) {
+            Tex* t = &sTex[TEX_HUD + i];
+            if (!hud[i]) continue;
+            if (t->im.w != hw[i] || t->im.h != hh[i]) {
+                drop_image(&t->im);
+                t->im = make_image(hw[i], hh[i], 1, VK_FORMAT_B8G8R8A8_UNORM,
+                                   VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_SAMPLE_COUNT_1_BIT);
+                t->sampler = sLinearClamp;
+                set_texture(TEX_HUD + i);
+            }
+            upload(S->up, t, hw[i], hh[i], 1, (const uint8_t*)hud[i]);
         }
         /* The copied rectangle of the EFB, as large as fits in the window
          * at the shape it has on a TV, with black bars left over. */
@@ -2881,6 +2907,15 @@ static int vk_present(int x, int y, int cw, int ch, int may_drop) {
             q.src[0] = q.src[1] = 0;
             q.src[2] = q.src[3] = 1;
             q.tex = TEX_MENU;
+            quad(&q);
+        }
+        for (i = 0; i < 2; i++) {
+            if (!hud[i]) continue;
+            use_pipeline(pipeline(PK_BLIT, 1));
+            set_viewport((float)hx[i], (float)hy[i], (float)hw[i], (float)hh[i], 0, 1);
+            q.src[0] = q.src[1] = 0;
+            q.src[2] = q.src[3] = 1;
+            q.tex = TEX_HUD + i;
             quad(&q);
         }
         vkCmdEndRendering(S->cb);

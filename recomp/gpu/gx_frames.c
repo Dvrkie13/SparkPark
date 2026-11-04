@@ -124,6 +124,9 @@ static void report(void) {
         lastWait = g_wait_ticks;
         snprintf(title, sizeof(title), "SparkPark - %.2f fps, slowest frame %.1f ms, busy %.0f%%", fps,
                  worst, busy);
+#if defined(_WIN32)
+        hud_set_fps(fps); /* SparkPark: the counter (hud_win32.c) */
+#endif
         win_set_title(title);
         if (e && *e == '1')
             fprintf(stderr, "fps: %.2f, slowest frame %.1f ms, busy %.0f%%, game %u, left out %u\n", fps, worst, busy,

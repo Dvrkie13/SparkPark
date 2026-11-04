@@ -277,6 +277,12 @@ static void rumble(int chan, int on) {
     set_motors(on);
 }
 
+/* SparkPark: the motors stop while the game is paused (window_win32.c),
+ * and go on as they were after. */
+void input_pause(int paused) {
+    if (pXInputSetState) set_motors(paused ? 0 : sRumbling);
+}
+
 /* A short buzz at the new strength, when the setting is changed: ended
  * at an input poll (read_pad) once it's been long enough. */
 static ULONGLONG sPreviewEnd;

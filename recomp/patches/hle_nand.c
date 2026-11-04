@@ -414,11 +414,18 @@ static void ensure_sysconf(void) {
     HLE_LOG("NAND: wrote default system settings to SYSCONF");
 }
 
+/* SparkPark: the Widescreen setting (settings.c), given before the game
+ * starts; RECOMP_WIDESCREEN=0 or 1 still decides over it. Read once: the
+ * game asks once at start-up, so a change counts from the next start. */
+static int sWideSetting = 1;
+
+void hle_set_widescreen(int on) { sWideSetting = on != 0; }
+
 int hle_widescreen(void) {
     static int on = -1;
     if (on < 0) {
         const char* e = getenv("RECOMP_WIDESCREEN");
-        on = !(e && *e == '0');
+        on = e && *e ? *e != '0' : sWideSetting;
     }
     return on;
 }

@@ -66,6 +66,13 @@ Microsoft Edge WebView2 SDK 1.0.4314.35 (loader, linked into SparkPark.exe)
   https://www.nuget.org/packages/Microsoft.Web.WebView2
   The WebView2 Runtime itself is part of Windows and is not included here.
 
+Vulkan-Headers, by The Khronos Group Inc. (compiled into
+runtime\libsparkpark_runtime.a, for the Vulkan renderer)
+  License: Apache-2.0 OR MIT; used under MIT (licenses\Vulkan-Headers-MIT.txt)
+  https://github.com/KhronosGroup/Vulkan-Headers
+  Vulkan itself (vulkan-1.dll) comes with your graphics driver and is not
+  included here.
+
 Button prompt icons, by Icons8
   prompts\
   Icons by Icons8 (https://icons8.com), as credited by PokePark

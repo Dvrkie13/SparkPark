@@ -36,6 +36,10 @@ typedef struct {
     int fov;                 /* field of view, percent of the game's (tangent of half the angle) */
     int aniso;               /* anisotropic filtering: 1 (off), 2, 4, 8 or 16 */
     int renderer;            /* RENDERER_*: what draws, from the next start */
+    int widescreen;          /* SparkPark: the game's own 16:9 mode (1), or 4:3; from the next start */
+    int show_fps;            /* SparkPark: a frame rate counter in the corner (F3 toggles it) */
+    int background_pause;    /* SparkPark: pause, mute and take no input while the window isn't in front */
+    int movie_skip;          /* SparkPark: holding + skips a movie (hle_game.c) */
     int rumble;              /* controller rumble: 0 off, 1 light, 2 normal, 3 strong */
     int touch_controls;      /* Android: the touch screen's controls, shown while it was used last; 0 never */
     int text_speed;          /* dialogue: 1 (the game's), 2, 3, or 0 (a page at once) */
@@ -72,7 +76,8 @@ void prompts_init(void);
 /* What settings_step changes. */
 enum { SET_FULLSCREEN, SET_SCALE, SET_MSAA, SET_FRAME_RATE, SET_FOV, SET_SENSITIVITY, SET_INVERT, SET_ANISO,
        SET_RUMBLE, SET_TEXT_SPEED, SET_BERRIES, SET_PRICES,
-       SET_DAMAGE_DEALT, SET_DAMAGE_TAKEN, SET_CHASE_SPEED, SET_RENDERER, SET_TOUCH };
+       SET_DAMAGE_DEALT, SET_DAMAGE_TAKEN, SET_CHASE_SPEED, SET_RENDERER, SET_TOUCH,
+       SET_WIDESCREEN, SET_SHOW_FPS, SET_BACKGROUND_PAUSE, SET_MOVIE_SKIP };
 /* Changes a setting a step (d: -1 or 1; on and off settings flip), applies
  * and saves it. */
 void settings_step(int which, int d);
@@ -99,6 +104,22 @@ int options_touch(int x, int y);
 int options_script(uint32_t held);
 /* Android: the touch controls' buttons held, as for options_script. */
 int options_touch_buttons(uint32_t held);
+
+/* SparkPark (hud_win32.c): the frame rate counter, as a small image laid
+ * over the picture at window pixel (*x, *y), *w x *h, 0xAARRGGBB, top row
+ * first; NULL when it's off. gx_frames.c gives it each second's rate. */
+void hud_set_fps(double fps);
+/* Also the progress of holding + to skip a movie, in the bottom right
+ * corner. which: HUD_COUNTER or HUD_SKIP. */
+enum { HUD_COUNTER, HUD_SKIP, HUD_IMAGES };
+const uint32_t* hud_draw(int which, int win_w, int win_h, int* x, int* y, int* w, int* h);
+/* Screenshots (F12): a request, taken at the next frame shown. The device
+ * hands over the window's picture; it is saved as a PNG in the Pictures
+ * folder's SparkPark folder, on a thread of its own. */
+void screenshot_request(void);
+int screenshot_pending(void);
+/* rgba: R,G,B,A byte order (else B,G,R,A); bottom_up: the last row first. */
+void screenshot_save(const uint8_t* px, int w, int h, size_t stride, int rgba, int bottom_up);
 
 /* The settings menu (menu_win32.c; in public builds, without
  * RECOMP_DEBUG_MENU, these are the Options tab's alone). */

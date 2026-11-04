@@ -4,6 +4,29 @@ SparkPark is a fork of [PokePark Wiicompiled](https://github.com/MildRain479/Pok
 
 This changelog lists what SparkPark adds on top. SparkPark never distributes game data or code built from it: its download is a builder that makes the game on the player's PC from their own disc.
 
+## Unreleased
+
+Roadmap Batch 1: profiling, Vulkan, and quality-of-life settings. Measurements are in `docs/PERFORMANCE.md`.
+
+### Added
+- **Profiling for developers:**
+  - `docs/PERFORMANCE.md`: how to measure (upstream's `RECOMP_FPS` and `RECOMP_PROFILE`), the baseline, and before/after numbers for each change.
+  - `SPARKPARK_DEBUG_INFO=1` gives the player-path build symbols for the profiler.
+  - The profiler's split now counts the indirect-call lookup, the paired-single helpers and the FIFO decoder's loops in their kind.
+- **Vulkan in the builder's runtime.** `build_player.py runtime` builds upstream's Vulkan renderer in when the Vulkan SDK is present. It compiles SparkPark's shaders to SPIR-V on the developer side; players need no SDK.
+  - In the park it cuts the CPU's work per frame from about 24 ms to about 7 ms, and holds 60 fps where OpenGL managed about 36.
+  - `builder/package.py stage` refuses an OpenGL-only runtime unless `--opengl-only` is given.
+  - `NOTICES.txt` lists the Vulkan headers (MIT).
+- **Settings** (Options and `settings.ini`; off means upstream's behaviour):
+  - **Widescreen** (on): the game's own 16:9 mode, or 4:3; from the next start. `RECOMP_WIDESCREEN` still overrides it.
+  - **Pause in background** (on): while another window is in front, the game pauses with its clock stopped, its sound held, rumble off and no input taken.
+  - **Show FPS** (off, F3): a frame rate counter in the top-left corner.
+  - **Hold + to skip movies** (on): holding + skips a movie such as the 56 s opening, with a "Skipping" bar while held.
+- **F12 screenshots,** saved as PNG in `Pictures\SparkPark` without the counter or the skip bar.
+
+### Changed
+- The game clock's pause (`ppc_timebase_pause`) now works on Windows too, not only Android.
+
 ## v0.2.0-alpha — 2026-11-04
 
 The first SparkPark release players can use. Its one download, `SparkPark-v0.2.0-alpha.zip`, is a **one-time builder**: it contains no game code and nothing from the disc. The game itself is still upstream's port; see the top of this file.

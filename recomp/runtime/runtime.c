@@ -305,9 +305,8 @@ static int invariant_tsc(void) {
 }
 #endif
 
-#ifndef _WIN32
+/* Time the game spent paused (ppc_timebase_pause), taken off its clock. */
 static uint64_t sPausedTicks;
-#endif
 
 uint64_t ppc_timebase(void) {
     uint64_t ticks;
@@ -319,7 +318,7 @@ uint64_t ppc_timebase(void) {
     static LONGLONG qpc0;
     LARGE_INTEGER now;
     uint64_t tsc;
-    if (mode == TSC) return tb0 + (uint64_t)((double)(__rdtsc() - tsc0) * perTsc);
+    if (mode == TSC) return tb0 + (uint64_t)((double)(__rdtsc() - tsc0) * perTsc) - sPausedTicks;
     if (mode == UNSET) {
         LARGE_INTEGER freq;
         QueryPerformanceFrequency(&freq);
@@ -339,6 +338,7 @@ uint64_t ppc_timebase(void) {
         tb0 = ticks;
         mode = TSC;
     }
+    ticks -= sPausedTicks;
 #else
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -347,9 +347,10 @@ uint64_t ppc_timebase(void) {
     return ticks;
 }
 
-#ifndef _WIN32
 /* Stops and restarts the time base, so time spent away (an Android app
- * in the background) isn't caught up on when the game carries on. */
+ * in the background; SparkPark: a Windows window not in front, with the
+ * Pause in background setting) isn't caught up on when the game carries
+ * on. Only the game's thread calls it. */
 void ppc_timebase_pause(int paused) {
     static uint64_t since;
     if (paused && !since) {
@@ -359,7 +360,6 @@ void ppc_timebase_pause(int paused) {
         since = 0;
     }
 }
-#endif
 
 uint32_t ppc_mftb(ppc_t* c, int tbr) {
     uint64_t ticks = ppc_timebase();

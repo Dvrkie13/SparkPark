@@ -247,7 +247,7 @@ uint32_t ppc_mftb(ppc_t* c, int tbr);
 
 /* Guest time base (60.75 MHz) and the decrementer deadline. */
 uint64_t ppc_timebase(void);
-/* Stops (1) and restarts (0) the time base (not on Windows). */
+/* Stops (1) and restarts (0) the time base. */
 void ppc_timebase_pause(int paused);
 int ppc_dec_deadline(uint64_t* deadline);
 void ppc_dec_disarm(void);

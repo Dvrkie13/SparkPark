@@ -271,9 +271,11 @@ static void dump_profile(void) {
         /* Totals by kind: recompiled game code, graphics, sound, waiting,
          * and the rest (runtime helpers, HLE, the OS and drivers). */
         static const struct { const char* kind; const char* names; } kKinds[] = {
-            {"game code", "f_"},
-            {"graphics", "run read_vertex read_comp read_color transform_vertex channel_color build_state draw gxb_ gx_ "
-                         "texture_for_map hash_bytes decode_ tex_ gl"},
+            /* SparkPark: also the guest's indirect-call lookup and paired-single helpers (game code), and
+             * the FIFO decoder's run and read_floats (graphics). */
+            {"game code", "f_ ppc_lookup ppc_icall psq_"},
+            {"graphics", "run read_vertex read_floats read_comp read_color transform_vertex channel_color build_state draw "
+                         "gxb_ gx_ texture_for_map hash_bytes decode_ tex_ gl"},
             {"sound", "mix_voice read_sample dsp_run_voices ai_frame push"},
             {"waiting", "NtWaitForSingleObject ZwDelayExecution WaitForSingleObject RtlDelayExecution Sleep "
                         "RtlQueryPerformanceCounter QueryPerformanceCounter ppc_timebase sleep_until"},

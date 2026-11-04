@@ -69,7 +69,8 @@ developed and tested on Windows only for now. See upstream's
 
 - **Widescreen.** The game runs in its native 16:9 mode, with its
   widescreen pictures and layouts, at full horizontal resolution rather
-  than squeezed for a TV to stretch.
+  than squeezed for a TV to stretch. The Widescreen setting switches it
+  to 4:3 (from the next start).
 - **High resolution.** Renders at 1x to 6x the Wii's resolution, or to
   fit the window. 3x is pixel for pixel on a 1440p display.
 - **High frame rates.** 30 fps (the game's own), 60 fps, or 120, 144,
@@ -119,6 +120,20 @@ Optional changes to the game's balance, all off (100%) by default:
   on the save files screen, in the game's own style. Changes apply
   immediately and are saved in `settings.ini`.
 - Runs at 60 Hz to match PC displays (the Wii runs at 59.94 Hz).
+- **Pauses in the background** (SparkPark). While another window is in
+  front, the game stops, its sound goes quiet and it takes no input, then
+  carries on where it was. The "Pause in background" setting turns it
+  off.
+- **Hold + to skip a movie** (SparkPark), such as the opening after New
+  Game. A "Skipping" bar shows while you hold. Setting: "Hold + to skip
+  movies".
+- **Frame rate counter** (SparkPark): **F3**, or the "Show FPS" setting.
+- **Screenshots** (SparkPark): **F12** saves a PNG in
+  `Pictures\SparkPark`.
+
+All of SparkPark's settings and keys are in Options (Display and
+Gameplay) and in `settings.ini`. Turned off, each behaves as upstream
+does.
 
 ## Default controls
 
@@ -161,17 +176,22 @@ SparkPark (v0.2.0-alpha):
 
 - **Tested on one PC so far.** Builds on slower PCs will take longer;
   please report how long yours took.
-- **OpenGL only.** The builder's runtime is built without the Vulkan
-  renderer for now.
+- **v0.2.0-alpha is OpenGL only.** Its builder's runtime was built without
+  the Vulkan renderer. The next release has Vulkan (the default), which is
+  about three times lighter on the CPU (see `docs/PERFORMANCE.md`).
 - **From a USB hard drive the disc check is slow** (it reads the whole
   image: about 2 minutes at 40 MB/s; the caption shows its progress). Copy
   the image to an SSD first for a faster start.
 - **"Would you like to choose this Picture?"** starts on No: press left
   (d-pad, left stick or the arrow keys) before confirming.
 - **The game window takes focus when it opens**, so anything you're typing
-  elsewhere at that moment goes to the game. A connected controller's
-  buttons also count while the window is in the background (upstream's
-  behavior).
+  elsewhere at that moment goes to the game. In v0.2.0-alpha a connected
+  controller's buttons also count while the window is in the background
+  (upstream's behavior); from the next release the game pauses there
+  instead.
+- **Entering a minigame with `RECOMP_ATTRACTION`** (a test switch) crashes
+  on an early save, in upstream too. Playing the minigames normally isn't
+  affected.
 
 From upstream (the game port itself):
 
@@ -194,7 +214,10 @@ From upstream (the game port itself):
 Needs Windows 10 or 11, Visual Studio 2022 or 2026 with the C++ desktop
 workload (the free Build Tools are enough), Python 3 and decomp-toolkit.
 The [Vulkan SDK](https://vulkan.lunarg.com/) is optional: without it only
-the OpenGL renderer is built, which works fine.
+the OpenGL renderer is built, which works but is slower (see
+`docs/PERFORMANCE.md`). The builder's release package needs it:
+`builder/package.py stage` refuses to package an OpenGL-only runtime
+unless given `--opengl-only`.
 
 1. Get [decomp-toolkit](https://github.com/encounter/decomp-toolkit/releases)
    v1.6.2 and put it at `build/tools/dtk.exe`.

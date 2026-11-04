@@ -1,5 +1,9 @@
 /* The game's window, which a device (gx_device.h) shows its pictures in.
  *
+ * SparkPark's keys: F3 shows or hides the frame rate counter (the Show FPS
+ * setting), F12 takes a screenshot (hud_win32.c). Alt+Enter toggles
+ * fullscreen, as upstream's.
+ *
  * Environment:
  *   RECOMP_GX_HIDDEN=1         do not show the window */
 #include <stdlib.h>
@@ -10,6 +14,10 @@
 
 #include "gx_device.h"
 #include "host_settings.h"
+#include "ppc.h"
+
+void audio_pause(int paused); /* audio_win32.c */
+void input_pause(int paused); /* input_win32.c */
 
 static HWND sWnd;
 static int sHidden, sFullscreen;
@@ -31,6 +39,17 @@ static LRESULT CALLBACK wnd_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             settings_save();
         }
         return 0;
+    }
+    if (msg == WM_KEYDOWN && !(lp & (1 << 30)) && !menu_is_open() && !options_is_open()) {
+        if (wp == VK_F3) {
+            g_settings.show_fps = !g_settings.show_fps;
+            settings_save();
+            return 0;
+        }
+        if (wp == VK_F12) {
+            screenshot_request();
+            return 0;
+        }
     }
     if (msg == WM_SYSCHAR || (msg == WM_SYSCOMMAND && (wp & 0xFFF0) == SC_KEYMENU)) return 0;
     if (menu_window_message(h, msg, wp, lp)) return 0;
@@ -94,12 +113,52 @@ void win_set_fullscreen(int on) {
 
 void win_set_title(const char* title) { SetWindowTextA(sWnd, title); }
 
-void win_pump(void) {
+static void pump(void) {
     MSG msg;
     while (PeekMessageA(&msg, NULL, 0, 0, PM_REMOVE)) {
         TranslateMessage(&msg);
         DispatchMessageA(&msg);
     }
+}
+
+/* Whether the window in front is the game's (or the first-run window's,
+ * or a message box of this program's). */
+static int in_front(void) {
+    DWORD pid = 0;
+    HWND w = GetForegroundWindow();
+    if (!w) return 0;
+    GetWindowThreadProcessId(w, &pid);
+    return pid == GetCurrentProcessId();
+}
+
+/* SparkPark: the Pause in background setting. Between frames, on the
+ * game's thread, as on Android when the app goes to the background
+ * (window_android.c): while another window is in front the game waits
+ * here, its clock stopped (so nothing is caught up on after), its sound
+ * held, the controller's motors off; it gets no input, as it doesn't run.
+ * Off, the game carries on behind other windows, as upstream's did. Not
+ * for a hidden window (test runs), which is never in front. */
+static void pause_in_background(void) {
+    char title[256];
+    if (!g_settings.background_pause || sHidden || in_front()) return;
+    ppc_timebase_pause(1);
+    audio_pause(1);
+    input_pause(1);
+    GetWindowTextA(sWnd, title, sizeof(title));
+    SetWindowTextA(sWnd, "SparkPark - paused");
+    while (g_settings.background_pause && !in_front()) {
+        MsgWaitForMultipleObjects(0, NULL, FALSE, 100, QS_ALLINPUT);
+        pump();
+    }
+    SetWindowTextA(sWnd, title);
+    input_pause(0);
+    audio_pause(0);
+    ppc_timebase_pause(0);
+}
+
+void win_pump(void) {
+    pump();
+    pause_in_background();
 }
 
 /* The compositor's own rate is another monitor's when there are several.
