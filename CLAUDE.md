@@ -55,12 +55,27 @@ Steps 1–6 of a from-scratch recomp (extract, analyze, recompile, runtime, boot
 1. **Fork and build as-is.** Fork upstream, build it on Windows following its README (VS 2022, Python 3, optional Vulkan SDK), everything on D:. Run it with the verified ISO. Confirm it reaches the title screen and the park is playable *before changing anything*.
 2. **Map the codebase.** Write `docs/ARCHITECTURE.md`: how the disc is read, where recompiled code lives, how the runtime is laid out (graphics, audio, input, saves, SD), and how the build pipeline works.
 3. **Rebrand.** Rename the executable, window title, and README branding to SparkPark per the hard rules, keeping upstream credit.
-4. **The builder.** Replace or wrap upstream's first-run disc handling with the SparkPark one-time builder (see Launcher below).
-5. **Input.** Right-stick-as-pointer (upstream has no pointer support), then the base control table, then per-attraction motion mappings.
+4. **The builder.** Replace or wrap upstream's first-run disc handling (`import_game()` in `import_win32.c`) with the SparkPark one-time builder (see Launcher below), including the local build toolchain.
+5. **Input.** Right-stick camera/pointer split (see Input plan), then the base control table, then per-attraction motion mappings.
 6. **Upstream gaps.** Graphics (fog, indirect texturing, dynamic lighting, logic ops, z-textures, lines/points), audio reverb/effects, Nunchuk support. Prioritize whatever is most visible in play.
 7. **Polish.** Widescreen, resolution scaling, framerate options, packaging.
 
-Upstream's known gaps (from its README at fork time): missing fog, indirect texturing, dynamic lighting, logic ops, z-textures, lines/points; no reverb/effects; silent Wii Remote speaker; no pointer or Nunchuk; Android lacks rumble and HOME; tested on one PC and one phone.
+Upstream's known gaps (from its README at fork time): missing fog, indirect texturing, dynamic lighting, logic ops, z-textures, lines/points; no reverb/effects; silent Wii Remote speaker; no Nunchuk; Android lacks rumble and HOME; tested on one PC and one phone.
+
+Corrections found while mapping the code (see docs/ARCHITECTURE.md):
+- Upstream *does* have a pointer, but only in the Rayquaza and Rotom minigames (mouse or right stick). There's no general pointer for menus or photo mode. In the park, the right stick is unused (its click is HOME) and the camera is mouse-only.
+- Upstream refuses the SD device; in-game photos live in the NAND save (Pic0–Pic3).
+- Upstream's first-run import only checks the 6-byte game ID. It does not check revision or hash.
+- A development run needs `orig\R8AE01\sys\main.dol` in addition to the extracted `disc\` folder.
+
+## Distribution model (decided)
+
+**The recompile and compile happen on the player's PC, from their own disc.** SparkPark releases and the repo never contain translated game code, compiled game code, or anything else derived from the disc.
+
+- Upstream compiles on the developer's machine and ships an exe containing the translated game code. SparkPark does **not** do that, so do not publish release builds that contain game-derived code.
+- The release ships: the builder, the runtime (as source or as a precompiled library with no game code in it), the recompiler, and a redistributable toolchain. Proposed: llvm-mingw (no MSVC needed, freely redistributable) plus embedded Python for the recompiler. Confirm licenses and size before committing to it.
+- The builder runs: verify disc → extract → recompile → compile/link → Play. Later launches skip straight to the game.
+- Developers can still build locally with MSVC as upstream does.
 
 ## Input plan (draft, to be confirmed)
 
@@ -82,6 +97,8 @@ Motion controls used in Attractions and Skill Games (needs mapping per attractio
 - **Swing timing** (vine swing, etc.) → button press or right-stick flick
 
 Design the input layer so each attraction can have its own mapping table. Make gyro optional, never required.
+
+**Right stick (decided):** in the park and normal gameplay the right stick controls the **camera** (currently mouse-only). Wherever the game needs pointing (menus, first-person/photo mode, pointer minigames like Rayquaza's and Rotom's), the right stick moves the **pointer** instead. Switch modes automatically based on whether the game is reading the IR pointer. The mouse keeps working for both.
 
 ## Launcher (one-time builder)
 
@@ -107,4 +124,5 @@ Look: an original storybook-style wooden signboard in a sunny park scene. No gam
 ## Open items
 
 - Final controller mappings per attraction
-- Whether SparkPark keeps upstream's Android build or goes Windows-only
+- Android: for now, leave upstream's Android code untouched (keeps upstream merges easy) and test only on Windows. Final call still open.
+- Vulkan SDK isn't installed on the dev machine yet, so builds are OpenGL-only for now.
