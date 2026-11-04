@@ -76,3 +76,36 @@ The controller is idle at rest (left stick 345/27, inside the deadzone). Test ru
 **Next**
 - The owner picks the builder option (A/B/C in BUILDER-PLAN.md) and approves a toolchain download for the llvm-mingw (or Zig) spike.
 - Step 4 (builder) after the spike; step 5 (input: route the right stick to the pointer while DPD is on).
+
+## 2026-11-03: Fork session 3, first release (v0.1.0-alpha, source only)
+
+**Done**
+- Committed the owner's updated CLAUDE.md (`5d5c64c`). It adds the manual right-stick camera/pointer toggle (step 5), the `--public` publishing rule, and the corrected camera note.
+- **`build.py` guard** (`4e71cf0`):
+  - `--public` exits before building, explains why, and runs only with `--public-local-only` (local testing, never publish).
+  - `--dist` and `--android` print a "don't share or upload" reminder.
+  - Tests still pass (2,814,740 + 13 checks); `--dist` still works; no `Releases/` folder is created.
+- **Audit before pushing.** The only path in the whole history that matches game-data patterns is `config/R8AE01/symbols.txt` (upstream's public function list). The only binaries are the 5 builder mockups and upstream's 80 Icons8 prompt icons. The largest file is `symbols.txt` (1.9 MB).
+- **README** made release-ready, plus a new **CHANGELOG.md** (`88962e3`):
+  - the disc requirement spelled out (R8AE01 Rev 0, Redump SHA-1);
+  - a `dtk disc verify` step before extracting, because building from source had skipped the hash check;
+  - VS 2022 or 2026, and OpenGL working without the Vulkan SDK;
+  - a SparkPark known-issues section;
+  - the not-affiliated notice at the top;
+  - the right stick listed as camera in the controls table.
+- Installed the GitHub CLI 2.103.3 portable at `D:\Tools\gh` (sha256 matches the release digest). The owner signed in as Dvrkie13.
+- **Published [SparkPark v0.1.0-alpha](https://github.com/Dvrkie13/SparkPark/releases/tag/v0.1.0-alpha)** as a pre-release:
+  - tag `v0.1.0-alpha` → `88962e3`, pushed on its own, not with `--tags`;
+  - notes drafted in `D:\SparkPark-build\release\v0.1.0-alpha-notes.md` and approved by the owner.
+- **Verified after publishing:**
+  - the public API reports `prerelease=true`, `draft=false`, `assets=0`;
+  - the release page's Assets offers only "Source code (zip)" and "Source code (tar.gz)".
+
+**Notes**
+- `v0.1.0-beta` in the local clone is **upstream's** tag (fetched from `upstream`). Its release ships compiled game code. It was not pushed to the fork. Never use `git push --tags` here.
+- The default toggle button in CLAUDE.md (Back/View/Select) is already upstream's binding for the Wii Remote's **−** (the park map and the save screen's Options button). Settle where − goes before step 5.
+
+**Next**
+- The owner picks the builder option (A/B/C in BUILDER-PLAN.md) and approves a toolchain download (llvm-mingw or Zig) for the build-time and fps spike.
+- Hand-test the first-run disc check by running `SparkPark.exe` from a clean folder.
+- Step 5: the right stick to the pointer while DPD is on, then the manual toggle, the setting and the indicator.
