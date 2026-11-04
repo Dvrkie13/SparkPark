@@ -12,3 +12,68 @@ settings.ini
 __pycache__/
 .vs/
 .vscode/
+
+# ---------------------------------------------------------------
+# SparkPark additions (merged from SparkPark's own rules; keep the
+# upstream rules above as they are)
+# ---------------------------------------------------------------
+
+# More disc image formats
+*.wia
+*.gcz
+*.ciso
+*.nkit.iso
+*.nkit.gcz
+
+# Executables and modules pulled from the disc
+*.rel
+*.elf
+*.sel
+*.rso
+
+# Extracted game files and generated output, wherever they end up
+/extracted/
+/game/
+/data/
+/files/
+/sys/
+/R8AE01/
+/recompiled/
+/generated/
+*.asm
+*.s
+
+# Saves, photos and user data created at runtime
+/saves/
+/photos/
+/sd/
+/nand/
+*.sav
+*.sav.bak
+vk_pipelines.bin
+
+# Dumps and debug captures that can contain game data
+*.dff
+*.dtm
+*.dmp
+*.fifo
+/dumps/
+
+# Build output
+/bin/
+/obj/
+*.exe
+*.dll
+*.pdb
+*.ilk
+*.lib
+*.exp
+*.apk
+
+# IDE / OS clutter
+*.user
+.DS_Store
+Thumbs.db
+desktop.ini
+*.pyc
+.venv/
