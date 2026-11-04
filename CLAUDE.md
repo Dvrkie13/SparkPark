@@ -63,7 +63,7 @@ Steps 1–6 of a from-scratch recomp (extract, analyze, recompile, runtime, boot
 Upstream's known gaps (from its README at fork time): missing fog, indirect texturing, dynamic lighting, logic ops, z-textures, lines/points; no reverb/effects; silent Wii Remote speaker; no Nunchuk; Android lacks rumble and HOME; tested on one PC and one phone.
 
 Corrections found while mapping the code (see docs/ARCHITECTURE.md):
-- Upstream *does* have a pointer, but only in the Rayquaza and Rotom minigames (mouse or right stick). There's no general pointer for menus or photo mode. In the park, the right stick is unused (its click is HOME) and the camera is mouse-only.
+- Upstream *does* have a pointer, but only in the Rayquaza and Rotom minigames (mouse or right stick). There's no general pointer for menus or photo mode. In the park, the right stick already turns the camera (its click is HOME).
 - Upstream refuses the SD device; in-game photos live in the NAND save (Pic0–Pic3).
 - Upstream's first-run import only checks the 6-byte game ID. It does not check revision or hash.
 - A development run needs `orig\R8AE01\sys\main.dol` in addition to the extracted `disc\` folder.
@@ -76,6 +76,7 @@ Corrections found while mapping the code (see docs/ARCHITECTURE.md):
 - The release ships: the builder, the runtime (as source or as a precompiled library with no game code in it), the recompiler, and a redistributable toolchain. Proposed: llvm-mingw (no MSVC needed, freely redistributable) plus embedded Python for the recompiler. Confirm licenses and size before committing to it.
 - The builder runs: verify disc → extract → recompile → compile/link → Play. Later launches skip straight to the game.
 - Developers can still build locally with MSVC as upstream does.
+- Upstream's `build.py --public` assembles a `Releases/` folder whose exe contains recompiled game code. Never publish it. Keep a guard in the script that blocks this by default.
 
 ## Input plan (draft, to be confirmed)
 
@@ -98,7 +99,13 @@ Motion controls used in Attractions and Skill Games (needs mapping per attractio
 
 Design the input layer so each attraction can have its own mapping table. Make gyro optional, never required.
 
-**Right stick (decided):** in the park and normal gameplay the right stick controls the **camera** (currently mouse-only). Wherever the game needs pointing (menus, first-person/photo mode, pointer minigames like Rayquaza's and Rotom's), the right stick moves the **pointer** instead. Switch modes automatically based on whether the game is reading the IR pointer. The mouse keeps working for both.
+**Right stick (decided):** in the park and normal gameplay the right stick controls the **camera** (upstream already does this). Wherever the game needs pointing (menus, first-person/photo mode, pointer minigames like Rayquaza's and Rotom's), the right stick moves the **pointer** instead. Switch modes automatically based on whether the game is reading the IR pointer. The mouse keeps working for both.
+
+**Manual camera/pointer toggle (decided):** the player can also swap the right stick between **360° camera** and **pointer** by hand.
+- Default toggle button: **Back / View / Select**. The right-stick click stays HOME as upstream has it. The toggle should be remappable in settings.
+- A manual choice overrides the automatic switch until the game's pointer state changes again (e.g. leaving a menu or photo mode), then auto takes over. Add a setting for players who want the manual choice to stick: "Right stick mode: Auto / Always camera / Always pointer / Manual toggle only".
+- Show a small, brief on-screen indicator when the mode changes (a camera icon or pointer icon that fades out), so the player always knows what the stick will do.
+- In pointer mode, show the pointer cursor even where the game wouldn't normally draw one, so pointing is never invisible.
 
 ## Launcher (one-time builder)
 
