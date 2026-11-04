@@ -158,3 +158,47 @@ The plan is option **A** in BUILDER-PLAN.md: llvm-mingw, embedded Python, a preb
 - **Player disk space.** About 335 MB for the unpacked builder, 1.4 GB for the extracted disc, about 54 MB of generated C plus objects during the build, and 22 MB for the exe. Plan for ~2 GB free.
 
 **Next (phase 2, after the owner's OK):** the builder app per `docs/launcher/sparkpark-launcher.html`. Choose WebView2 vs native first.
+
+## 2026-11-04: v0.2.0-alpha, phase 2: the builder app (WebView2)
+
+**Done**
+- **UI: WebView2**, the owner's choice. `builder/make_ui.py` generates `builder/ui/index.html` from the design reference `docs/launcher/sparkpark-launcher.html`. The look and animations are untouched. It only changes four things:
+  - the Google Fonts link becomes a local `@font-face` for `fonts/Baloo2-wght.ttf` (Baloo 2, SIL OFL 1.1, from google/fonts; file hashes match the repo's git blobs);
+  - the stage scales to fit the window;
+  - the Build label gets an id (for "Retry Build");
+  - the timer script becomes `builder/ui_script.js`.
+- **`builder/ui_script.js`**: the same state machine, driven by the launcher.
+  - Captions follow the real stages (extracting disc → recompiling game code → linking the runtime).
+  - A failed disc returns to Upload ISO with the reason in a red caption pill.
+  - A failed build shows **Retry Build** with the reason.
+  - Controller support: A (Gamepad API, standard mapping) presses the button, as do Enter/Space and the mouse.
+- **`builder/launcher.cpp`** (`SparkPark.exe`, 0.4 MB): built with MSVC on the dev side by `builder/build_launcher.py`, with the static WebView2 loader (SDK 1.0.4314.35, BSD-style licence) and the static CRT. It needs only the WebView2 Runtime on the player's PC.
+  - **Pick:** a file picker → `dtk disc info` + `verify` → `disc_verify.c`. The sign gets a short reason per verdict; the full text goes to the log.
+  - **Build:**
+    - dtk extract, with progress from bytes written against the known 1,400,709,637;
+    - the embedded Python running `recomp.py`, with progress from files written against 73;
+    - the embedded Python running `build_player.py game`, with progress from its `[n/76]` lines;
+    - then the prompt icons are copied and `build.json` is written.
+  - **Play:** starts the game and closes. **Every later start goes straight into the game.** `--rebuild`, or holding Shift, shows the builder again.
+  - If the WebView2 Runtime is missing, a message points to Microsoft's installer.
+- **Where things go (SPARKPARK_HOME):** `%LOCALAPPDATA%\SparkPark` by default, `<SparkPark folder>\data` when `portable.txt` sits beside the launcher, or `%SPARKPARK_HOME%`. Inside it:
+  - `game\SparkParkGame.exe`;
+  - `game\R8AE01\{disc,sys,nand}` (saves in `nand`);
+  - `game\settings.ini`;
+  - `build.json` (the "build complete" marker);
+  - `logs\build.log`;
+  - `webview2\` (the page's browser cache);
+  - `work\`, which is deleted after a build.
+- **`builder/package.py stage`** assembles the app folder (351 MB): launcher, page and font, dtk, prompt icons, the recompiler scripts + `symbols.txt` + `hooks.txt` + runtime headers, the trimmed llvm-mingw, embedded Python, and the runtime library (built from the disc-free header with the full llvm-mingw).
+- **Test hooks** (environment only): `SPARKPARK_TEST_ISO`, `SPARKPARK_AUTOPRESS`, `SPARKPARK_SHOTS`, `SPARKPARK_NO_LAUNCH`, `SPARKPARK_TEST_FAIL=compile`.
+- **Tested in portable mode on D:**
+  1. **A one-byte-modified ISO** (same size, correct header) was rejected as *modified* (Redump: not found).
+  2. **A missing compiler** (`SPARKPARK_TEST_FAIL=compile`) gave "The bundled compiler couldn't be started…" with Retry Build.
+  3. **The real ISO.** The full flow, then a 74 s build, then Play. The launcher closed and started the game, which reached the park (Chatot) with the scripted left+2 presses.
+  4. **The second start** went straight into the game: the launcher exited after 77 ms with no builder page.
+
+  Screenshots of every state are in `D:\SparkPark-build\shots\builder-states.png`.
+
+**Not yet tested by hand:** the real file picker, a mouse click, and a physical controller's A button. Automated runs used the test hooks.
+
+**Next (phase 3, after the owner's OK):** licences/notices for every component, README.txt, the zip, the audit, and a clean-folder test as a new player.

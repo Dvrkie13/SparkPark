@@ -77,3 +77,6 @@ Thumbs.db
 desktop.ini
 *.pyc
 .venv/
+
+# SparkPark builder: generated from docs/launcher by builder/make_ui.py
+/builder/ui/
