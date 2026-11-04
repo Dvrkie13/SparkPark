@@ -427,14 +427,31 @@ def main():
     ap.add_argument("--no-trace", action="store_true",
                     help="without the trace of recent calls (RECOMP_TRACE) kept for crash reports and RECOMP_CALLS")
     ap.add_argument("--public", action="store_true",
-                    help="release build without the debug settings menu, put together in Releases/")
+                    help="release build without the debug settings menu, put together in Releases/ "
+                         "(SparkPark: refused unless --public-local-only is given; never publish it)")
     ap.add_argument("--dist", action="store_true",
                     help="copy the boot program, as SparkPark.exe, and its files to build/recomp/dist")
     ap.add_argument("--android", action="store_true", help="the Android app (arm64), build/recomp/android/PokePark.apk")
     ap.add_argument("--install", action="store_true", help="with --android: install it on the phone with adb")
+    ap.add_argument("--public-local-only", action="store_true",
+                    help="SparkPark: allow --public for local testing of the release layout. The result "
+                         "contains game code recompiled from your disc: never publish or share it")
     ap.add_argument("args", nargs="*", help="extra arguments for --run")
     args = ap.parse_args()
     global OBJ
+    # SparkPark: the exe built here contains game code recompiled from the
+    # player's own disc, so it must never be published (CLAUDE.md,
+    # "Distribution model"). --public assembles exactly such a release
+    # folder, so it refuses unless asked for explicitly as a local-only test.
+    if args.public and not args.public_local_only:
+        sys.exit("build.py: --public is disabled in SparkPark.\n"
+                 "It puts together Releases/ with an exe that contains game code recompiled from your\n"
+                 "disc. SparkPark never publishes that: players build the game on their own PC from their\n"
+                 "own disc. To look at the release layout locally, add --public-local-only; never upload\n"
+                 "or share the result. To play, use --dist (build/recomp/dist).")
+    if args.dist or args.android or args.public:
+        print("build.py: the program built here contains game code recompiled from your disc. "
+              "It's for you to play: don't share or upload it.")
     if args.public:
         args.release = True
     if args.release:
