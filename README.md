@@ -21,8 +21,10 @@ game. The program reads your disc image the first time it runs.
 1. Download the latest build from [Releases](../../releases) and unzip it.
 2. Run `PokePark.exe`.
 3. The first time, choose your disc image (ISO, RVZ, WBFS, WIA, CISO and
-   the like). The game is set up in an `R8AE01` folder beside the program,
-   and your saves are kept in `R8AE01\nand`.
+   the like). It's checked against the original disc, then the game is set
+   up in an `R8AE01` folder beside the program, and your saves are kept in
+   `R8AE01\nand`. WBFS and scrubbed copies work, after a warning; a
+   patched or modded `main.dol` doesn't.
 
 Keep the `prompts` and `tools` folders beside `PokePark.exe`.
 
@@ -201,6 +203,8 @@ in [recomp/README.md](recomp/README.md).
   Windows and [nod](https://github.com/encounter/nod) on Android, both by
   Luke Street and contributors (MIT or Apache-2.0; licenses in
   `recomp/assets`).
+- The disc check follows [SparkPark](https://github.com/Dvrkie13/SparkPark)
+  by Dvrkie13 (CC0).
 - Button icons by [Icons8](https://icons8.com).
 
 PokePark Wii is © Nintendo, Creatures Inc., GAME FREAK inc. and The
