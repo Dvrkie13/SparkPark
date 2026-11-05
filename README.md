@@ -138,7 +138,8 @@ releases it, and a click captures it again.
 | Venusaur's Vine Swing, Tangrowth's Swing-Along | Swing: Q and E by turns, in time. Jump: Space | LB and RB. A |
 | Blaziken's Boulder Bash | Swing: left click or Space. Recover: Q and E by turns | X or A. LB and RB |
 | Gyarados' Aqua Dash, Empoleon's Snow Slide | Steer: A / D | Left stick |
-| Pelipper's Circle Circuit, Salamence's Air Race, Rhyperior's Bumper Burn | Steer: A / D. Climb and dive: W / S | Left stick |
+| Pelipper's Circle Circuit, Salamence's Air Race | Steer: A / D. Climb and dive: W / S | Left stick |
+| Rhyperior's Bumper Burn | Roll: WASD | Left stick |
 | Rayquaza's Balloon Panic | As flying, then aim with the mouse | Left stick, then right stick |
 | Rotom's Spooky Shoot-'em-Up | Aim: mouse | Right stick |
 | Bastiodon's Panel Crush | Buttons, as on the Wii | Buttons |
