@@ -29,6 +29,8 @@
 
 int hle_pause_main_page(void); /* hle_pause.c */
 int hle_file_select_shown(void);
+int hle_password_screen_shown(void);
+void hle_password_unlock_all(void);
 const uint32_t* hle_pause_image(const char* name, const char* alpha, int* w, int* h);
 int hle_font_metrics(int* cellW, int* cellH, int* baseline); /* hle_prompts.c */
 int hle_font_glyph(uint16_t code, uint8_t* cov, int* left, int* advance);
@@ -81,7 +83,6 @@ static const Row kGameplay[] = {
     {ROW_SETTING, SET_DAMAGE_DEALT, "Damage dealt"},
     {ROW_SETTING, SET_DAMAGE_TAKEN, "Damage taken"},
     {ROW_SETTING, SET_CHASE_SPEED, "Chase speed"},
-    {ROW_SETTING, SET_UNLOCK_PASSWORDS, "Unlock all passwords"},
 };
 static const char* const kAction[ACT_COUNT] = {
     "Up", "Down", "Left", "Right", "2: Jump", "1: Dash", "A: Thunderbolt", "B: Camera", "+: Pad", "-: Map", "First person",
@@ -150,7 +151,6 @@ static void setting_text(int which, char* out, size_t n) {
     case SET_FOV: snprintf(out, n, "%d%%", g_settings.fov); break;
     case SET_SENSITIVITY: snprintf(out, n, "%.1f", g_settings.mouse_sensitivity); break;
     case SET_INVERT: snprintf(out, n, g_settings.invert_tilt ? "On" : "Off"); break;
-    case SET_UNLOCK_PASSWORDS: snprintf(out, n, g_settings.unlock_passwords ? "On" : "Off"); break;
     case SET_TOUCH: snprintf(out, n, g_settings.touch_controls ? "On" : "Off"); break;
     case SET_ANISO: snprintf(out, n, g_settings.aniso == 1 ? "Original" : "%dx", g_settings.aniso); break;
     case SET_RENDERER:
@@ -226,6 +226,14 @@ static void set_open(int open) {
     sCapture = CAPTURE_NONE;
     sOnRows = 0;
     changed();
+}
+
+/* The button (-) on the save file screen, or the password screen's. */
+static int file_button_shown(void) { return hle_file_select_shown() || hle_password_screen_shown(); }
+
+static void file_button(void) {
+    if (hle_file_select_shown()) open_from(FROM_FILES);
+    else hle_password_unlock_all();
 }
 
 static void show_row(void) {
@@ -600,7 +608,7 @@ static int draw_button_icon(uint32_t button, Rect dst, uint32_t edge) {
  * with the icon of what opens it (the - button's key). */
 static const Rect kFileButton = {1332, 655, 1602, 748}; /* as tall as Arcade's */
 
-static void draw_file_button(void) {
+static void draw_file_button(const char* name) {
     /* The plank in three: its ends, and a piece of its middle stretched,
      * past the Pikachu at its right. */
     static const Rect kLeft = {2, 5, 70, 58}, kMiddle = {100, 5, 140, 58}, kRight = {200, 5, 256, 58};
@@ -614,7 +622,7 @@ static void draw_file_button(void) {
     draw_picture("MaAtMenu", NULL, kMiddle, m, 0xFFFFFF);
     draw_picture("MaAtMenu", NULL, kRight, r, 0xFFFFFF);
     hasIcon = draw_button_icon(HOST_PAD_MINUS, icon, 0xFF7A2020u);
-    draw_text("Options", hasIcon ? (icon.x1 + kFileButton.x1) / 2 : (kFileButton.x0 + kFileButton.x1) / 2, 703, 56,
+    draw_text(name, hasIcon ? (icon.x1 + kFileButton.x1) / 2 : (kFileButton.x0 + kFileButton.x1) / 2, 703, 56,
               ALIGN_CENTRE, 0xFFFFFFFFu, 0xFF7A2020u, 4.0f, 1, hasIcon ? 175 : 220);
     /* Over it, a newer release's news (Options' Updates row opens its page). */
     if (update_state() == UPDATE_NEWER) {
@@ -753,7 +761,8 @@ unsigned options_draws(void) { return sDraws; }
 const uint32_t* options_draw(int w, int h) {
     static unsigned drawn = ~0u;
     static int drawnW, drawnH, drawnWhat, drawnUpdate, cw;
-    int what = sOpen ? 2 : hle_pause_main_page() ? 1 : hle_file_select_shown() ? 3 : 0, y;
+    int what = sOpen ? 2 : hle_pause_main_page() ? 1 : hle_file_select_shown() ? 3 : hle_password_screen_shown() ? 4 : 0;
+    int y;
     if (sOpen && !shown(sFrom)) { /* what it was opened from went (the scene changed) */
         set_open(0);
         what = 0;
@@ -785,8 +794,8 @@ const uint32_t* options_draw(int w, int h) {
         draw_tab("Options", 1);
         return sPx;
     }
-    if (what == 3) {
-        draw_file_button();
+    if (what >= 3) {
+        draw_file_button(what == 3 ? "Options" : "Unlock all");
         return sPx;
     }
     {
@@ -894,16 +903,16 @@ int options_window_message(unsigned msg, uintptr_t wp, intptr_t lp) {
     if (msg == WM_XBUTTONDOWN) vk = HIWORD(wp) == XBUTTON1 ? VK_XBUTTON1 : VK_XBUTTON2;
     if (!sOpen) {
         /* Right, on the Pad's main page, opens the tab; on the save file
-         * screen, its button (-) or a click on it. */
+         * and password screens, their button (-) or a click on it. */
         if (down && !repeat && (vk == VK_RIGHT || key_is(vk, ACT_RIGHT)) && hle_pause_main_page()) {
             open_from(FROM_PAD);
             return 1;
         }
-        if (!hle_file_select_shown() || repeat) return 0;
+        if (!file_button_shown() || repeat) return 0;
         if ((down && key_is(vk, ACT_MINUS)) ||
             (msg == WM_LBUTTONDOWN && sScale > 0 &&
              in(kFileButton, ((short)LOWORD(lp) - sOffX) / sScale, ((short)HIWORD(lp) - sOffY) / sScale))) {
-            open_from(FROM_FILES);
+            file_button();
             return 1;
         }
         return 0;
@@ -950,8 +959,8 @@ int options_touch(int x, int y) {
         open_from(FROM_PAD);
         return 1;
     }
-    if (hle_file_select_shown() && in(kFileButton, rx, ry)) {
-        open_from(FROM_FILES);
+    if (file_button_shown() && in(kFileButton, rx, ry)) {
+        file_button();
         return 1;
     }
     return 0;
@@ -965,7 +974,7 @@ void options_controller(uint32_t raw, uint32_t nav) {
     lastNav = nav;
     if (!sOpen) {
         if ((navPressed & XPAD_RIGHT) && hle_pause_main_page()) open_from(FROM_PAD);
-        else if (pad_is(pressed, ACT_MINUS) && hle_file_select_shown()) open_from(FROM_FILES);
+        else if (pad_is(pressed, ACT_MINUS) && file_button_shown()) file_button();
         return;
     }
     if (sCapture == CAPTURE_PAD) {
@@ -990,7 +999,7 @@ static int remote_input(uint32_t held, uint32_t* last, int* swallow) {
     if (!held) *swallow = 0;
     if (!sOpen) {
         if ((p & HOST_PAD_SCREEN_RIGHT) && hle_pause_main_page()) open_from(FROM_PAD);
-        else if ((p & HOST_PAD_MINUS) && hle_file_select_shown()) open_from(FROM_FILES);
+        else if ((p & HOST_PAD_MINUS) && file_button_shown()) file_button();
         if (sOpen) *swallow = 1;
         return *swallow; /* what the tab took stays its until let go */
     }

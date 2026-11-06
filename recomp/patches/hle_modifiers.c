@@ -168,39 +168,3 @@ void f_8008FFA0(ppc_t* c) {
     f_8008FFA0_orig(c);
     for (i = 0; i < 5; i++) ST32(energy + kScaled[i], saved[i]);
 }
-
-/* Passwords: the seven the save menu takes (mnStartMenu's script) give three
- * items and bring four Pokémon. All that entering one does is set a bit, for
- * a save file; here the same bits are kept set in the live game, on each read
- * of the remote, as a file's load or a new game replaces them, and the game's
- * own saves keep them. Turning it off takes nothing away. */
-#define GLOBAL_MANAGER 0x80378460u
-#define GLOBAL_FLAG_TABLE (GLOBAL_MANAGER + 0x1AF0) /* +8 entries, +0xC count */
-#define GLOBAL_FLAGS (GLOBAL_MANAGER + 0x1B00)
-#define GLOBAL_STORY_ITEMS (GLOBAL_MANAGER + 0x5EE3)
-#define GLOBAL_ARCADE_ITEMS (GLOBAL_MANAGER + 0x5F23)
-#define PASSWORD_ITEMS 0x0D /* surfboard, snowboard, balloon */
-
-static const uint32_t kPasswordFlags[] = {159, 164, 165, 166};
-static int sUnlockPasswords;
-
-void hle_set_unlock_passwords(int on) {
-    sUnlockPasswords = on;
-}
-
-void hle_passwords_update(void) {
-    uint32_t entries, count, i, j;
-    if (!sUnlockPasswords) return;
-    ST8(GLOBAL_STORY_ITEMS, LD8(GLOBAL_STORY_ITEMS) | PASSWORD_ITEMS);
-    ST8(GLOBAL_ARCADE_ITEMS, LD8(GLOBAL_ARCADE_ITEMS) | PASSWORD_ITEMS);
-    entries = LD32(GLOBAL_FLAG_TABLE + 8);
-    count = LD32(GLOBAL_FLAG_TABLE + 0xC);
-    for (i = 0; i < count && i < 200; i++) {
-        for (j = 0; j < 4; j++) {
-            if (LD32(entries + 12 * i) == kPasswordFlags[j]) {
-                uint32_t word = GLOBAL_FLAGS + 4 * (i / 32);
-                ST32(word, LD32(word) | 1u << (i % 32));
-            }
-        }
-    }
-}

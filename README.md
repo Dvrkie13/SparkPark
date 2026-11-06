@@ -95,7 +95,6 @@ Optional changes to the game's balance, all off (100%) by default:
 | Damage dealt | 50% to 300% |
 | Damage taken | none, 50% to 300% |
 | Chase speed | 50% to 150% of the speed of the Pokémon you chase |
-| Unlock all passwords | on gives every file what all seven passwords give, and the game's next save keeps it |
 
 ### Quality of life
 
@@ -104,6 +103,8 @@ Optional changes to the game's balance, all off (100%) by default:
 - **An in-game Options menu.** It's in the PokéPark Pad (pause menu) and
   on the save files screen, in the game's own style. Changes apply
   immediately and are saved in `settings.ini`.
+- **Unlock all passwords.** One button on the Password screen gives that
+  save file what all seven passwords give, and the game saves it.
 - **Update check.** At start it asks GitHub whether a newer release is
   out. If one is, the save files screen says so, and Options > Display >
   Updates opens its download page. Nothing is downloaded by itself, and
