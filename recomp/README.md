@@ -464,8 +464,8 @@ What is different from Windows:
   so no Keyboard section in Options.
 - **Controls:** a controller, bound in Options as on Windows, or controls
   on the touch screen, drawn over the game while it was touched last: a
-  stick on the left, 2, 1, A, B, Shake and Shake 2 on the right, - and +
-  at the top left (no HOME); dragging elsewhere turns the camera. A tap on the Pad's Options tab, or the save file screen's
+  stick on the left, 2, 1, A, B, Shake and Shake 2 on the right, -, + and
+  View (first person) at the top left; dragging elsewhere turns the camera. A tap on the Pad's Options tab, or the save file screen's
   Options button (or -, there), opens Options, which taps then work; a
   tap off the book closes it. Touch controls (first in Controller) off
   never shows them, for a controller alone; taps still work Options.

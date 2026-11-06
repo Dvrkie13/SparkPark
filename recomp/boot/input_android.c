@@ -10,7 +10,8 @@
  *                    own for moving in any direction (hle_stick.c)
  *   right, bottom    2 (jump), 1 (dash), A (Thunderbolt), B (camera),
  *                    Shake and Shake 2 (in minigames, by turns)
- *   top left         - and + (first person: a controller's right stick click)
+ *   top left         -, + and View (first person, as a controller's right
+ *                    stick click)
  *   anywhere else    dragging turns the camera, as the mouse does
  * A touch on the Options tab of the PokéPark Pad, or the save file
  * screen's Options button, opens it; while it is open, touches work it
@@ -208,6 +209,7 @@ static const Control kButtons[] = {
     {-1.5f, -4.0f, 0.75f, HOST_PAD_A, "A"},        {-3.5f, -3.3f, 0.65f, HOST_PAD_B, "B"},
     {-5.5f, -1.0f, 0.55f, HOST_PAD_SHAKE, "Shake"}, {-5.4f, -2.4f, 0.55f, HOST_PAD_SHAKE2, "Shake 2"},
     {0.9f, 0.8f, 0.45f, HOST_PAD_MINUS, "-"},      {2.1f, 0.8f, 0.45f, HOST_PAD_PLUS, "+"},
+    {3.3f, 0.8f, 0.45f, HOST_PAD_HOME, "View"},
 };
 #define BUTTONS ((int)(sizeof(kButtons) / sizeof(kButtons[0])))
 
