@@ -737,11 +737,13 @@ int gx_register_copy(uint32_t addr, uint32_t handle, int width, int height, int 
 void gx_copy_write_back(uint32_t addr, int fmt, int intensity, int w, int h, int stride, const uint8_t* rgba, int force);
 
 /* Copies to put in guest memory too (gx_register_copy says which), once
- * the frame that makes them has been drawn: read back from the GPU, at
- * the EFB's own size. */
+ * the frame after has been drawn: read back from the GPU, at the EFB's own
+ * size. Made again in that frame, it's an effect starting (the blur's eight
+ * copies held a frame up by 45 ms), so it's dropped. */
 typedef struct WriteBack {
     uint32_t addr;
     int target, w, h, fmt, intensity, stride;
+    int waited;
 } WriteBack;
 static WriteBack sWriteBacks[8];
 static int sWriteBackCount;
@@ -777,9 +779,16 @@ static void write_back(const WriteBack* b, int force) {
 }
 
 static void write_back_copies(void) {
-    int i;
-    for (i = 0; i < sWriteBackCount; i++) write_back(&sWriteBacks[i], 0);
-    sWriteBackCount = 0;
+    int i, kept = 0;
+    for (i = 0; i < sWriteBackCount; i++) {
+        if (sWriteBacks[i].waited) {
+            write_back(&sWriteBacks[i], 0);
+        } else {
+            sWriteBacks[i].waited = 1;
+            sWriteBacks[kept++] = sWriteBacks[i];
+        }
+    }
+    sWriteBackCount = kept;
 }
 
 /* g_gx_copy_sync: the copy holding addr, made every frame and so never
@@ -841,6 +850,7 @@ void gxb_copy_to_texture(uint32_t addr, int x, int y, int w, int h, int fmt, int
         r->a[7] = efb_alpha;
     }
     made.addr = addr;
+    made.waited = 0;
     made.target = t;
     made.w = w;
     made.h = h;
@@ -853,7 +863,15 @@ void gxb_copy_to_texture(uint32_t addr, int x, int y, int w, int h, int fmt, int
         else i = (int)(addr >> 5) & 31;
     }
     sCopiesMade[i] = made;
-    if (!gx_register_copy(addr, sDev->copy_texture(t), w, h, fmt)) return;
+    if (!gx_register_copy(addr, sDev->copy_texture(t), w, h, fmt)) {
+        for (i = 0; i < sWriteBackCount; i++) {
+            if (sWriteBacks[i].addr == addr && sWriteBacks[i].waited) {
+                sWriteBacks[i] = sWriteBacks[--sWriteBackCount];
+                break;
+            }
+        }
+        return;
+    }
     for (i = 0; i < sWriteBackCount && sWriteBacks[i].addr != addr; i++) {}
     if (i == sWriteBackCount) {
         if (sWriteBackCount == 8) return;

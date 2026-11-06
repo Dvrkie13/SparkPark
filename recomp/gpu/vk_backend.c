@@ -62,6 +62,7 @@ const GXDevice g_vk_device = {"Vulkan", vk_unavailable};
 #else
 #include <dlfcn.h>
 #include <pthread.h>
+#include <sys/resource.h>
 #include <android/native_window.h>
 #define VK_USE_PLATFORM_ANDROID_KHR
 #define SURFACE_EXTENSION VK_KHR_ANDROID_SURFACE_EXTENSION_NAME
@@ -2355,6 +2356,11 @@ static DWORD WINAPI spec_thread(LPVOID arg) {
 static void* spec_thread(void* arg) {
 #endif
     (void)arg;
+#ifdef __ANDROID__
+    /* Below the game thread, which is kept to the fastest core: at the same
+     * priority, a pipeline being made there held it up by 15 ms. */
+    setpriority(PRIO_PROCESS, 0, 10);
+#endif
     for (;;) {
         Spec* s;
         MAKE_LOCK();
@@ -2578,7 +2584,9 @@ static void span_add(int first, int n) {
  * 2.6 s, on an RTX 5070. */
 static void arena_grow(int need) {
     VkMemoryPropertyFlags props = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    int verts = sArenaVerts ? sArenaVerts * 2 : 1 << 19;
+    /* What the park comes to: growing costs a frame 25 ms or more, most of
+     * it the system clearing the new memory, so it's done at the start. */
+    int verts = sArenaVerts ? sArenaVerts * 2 : 1 << 21;
     Buffer b;
     while (verts < sArenaVerts + need) verts *= 2;
     if (sRebar) props |= VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
