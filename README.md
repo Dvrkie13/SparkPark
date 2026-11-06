@@ -95,6 +95,7 @@ Optional changes to the game's balance, all off (100%) by default:
 | Damage dealt | 50% to 300% |
 | Damage taken | none, 50% to 300% |
 | Chase speed | 50% to 150% of the speed of the Pokémon you chase |
+| Unlock all passwords | on gives every file what all seven passwords give, and the game's next save keeps it |
 
 ### Quality of life
 

@@ -81,6 +81,7 @@ static const Row kGameplay[] = {
     {ROW_SETTING, SET_DAMAGE_DEALT, "Damage dealt"},
     {ROW_SETTING, SET_DAMAGE_TAKEN, "Damage taken"},
     {ROW_SETTING, SET_CHASE_SPEED, "Chase speed"},
+    {ROW_SETTING, SET_UNLOCK_PASSWORDS, "Unlock all passwords"},
 };
 static const char* const kAction[ACT_COUNT] = {
     "Up", "Down", "Left", "Right", "2: Jump", "1: Dash", "A: Thunderbolt", "B: Camera", "+: Pad", "-: Map", "First person",
@@ -149,6 +150,7 @@ static void setting_text(int which, char* out, size_t n) {
     case SET_FOV: snprintf(out, n, "%d%%", g_settings.fov); break;
     case SET_SENSITIVITY: snprintf(out, n, "%.1f", g_settings.mouse_sensitivity); break;
     case SET_INVERT: snprintf(out, n, g_settings.invert_tilt ? "On" : "Off"); break;
+    case SET_UNLOCK_PASSWORDS: snprintf(out, n, g_settings.unlock_passwords ? "On" : "Off"); break;
     case SET_TOUCH: snprintf(out, n, g_settings.touch_controls ? "On" : "Off"); break;
     case SET_ANISO: snprintf(out, n, g_settings.aniso == 1 ? "Original" : "%dx", g_settings.aniso); break;
     case SET_RENDERER:

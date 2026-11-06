@@ -222,6 +222,7 @@ void f_802488A0(ppc_t* c) {
     int on = chan >= 0 && chan < WPAD_MAX_CHANS && connected(chan), motion = 0, i;
     int16_t acc[3], dots[4][2];
     hle_prompts_update();
+    hle_passwords_update();
     if (on && g_host_pad_read && !g_host_pad_read(chan, &held)) held = 0;
     if (on && chan == 0) {
         uint32_t scripted = script_held();

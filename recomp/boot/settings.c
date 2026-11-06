@@ -31,6 +31,7 @@ void hle_set_berry_rate(int percent);
 void hle_set_prices(int percent);
 void hle_set_damage(int dealt, int taken);
 void hle_set_chase_speed(int percent);
+void hle_set_unlock_passwords(int on);
 
 /* The gameplay settings' choices, in order. */
 static const int kTextSpeeds[] = {1, 2, 3, 0};
@@ -53,6 +54,7 @@ static void apply_gameplay(void) {
     hle_set_prices(g_settings.prices);
     hle_set_damage(g_settings.damage_dealt, g_settings.damage_taken);
     hle_set_chase_speed(g_settings.chase_speed);
+    hle_set_unlock_passwords(g_settings.unlock_passwords);
 }
 
 #define FOV_MIN 80
@@ -218,8 +220,10 @@ void settings_save(void) {
             g_settings.damage_dealt);
     fprintf(f, "damage_taken = %d ; damage Pikachu takes in battles, percent of the game's: 0 (none), 50, 100, 200 or 300\n",
             g_settings.damage_taken);
-    fprintf(f, "chase_speed = %d ; the speed of the Pokemon Pikachu chases, percent of the game's: 50, 75, 100, 125 or 150\n\n",
+    fprintf(f, "chase_speed = %d ; the speed of the Pokemon Pikachu chases, percent of the game's: 50, 75, 100, 125 or 150\n",
             g_settings.chase_speed);
+    fprintf(f, "unlock_passwords = %d ; 1: the game has what all seven of its passwords give\n\n",
+            g_settings.unlock_passwords);
     fprintf(f, "[updates]\n");
     fprintf(f, "check = %d ; 1: at start, ask GitHub whether a newer version is out\n\n", g_settings.check_updates);
 #ifndef __ANDROID__ /* no mouse or keyboard */
@@ -309,6 +313,7 @@ void settings_load(void) {
                 g_settings.damage_taken = kDamageTaken[choice(kDamageTaken, COUNT(kDamageTaken), atoi(p))];
             if (!strcmp(name, "chase_speed"))
                 g_settings.chase_speed = kChaseSpeeds[choice(kChaseSpeeds, COUNT(kChaseSpeeds), atoi(p))];
+            if (!strcmp(name, "unlock_passwords")) g_settings.unlock_passwords = atoi(p) != 0;
         } else if (!strcmp(section, "mouse")) {
             if (!strcmp(name, "sensitivity")) {
                 float s = (float)atof(p);
@@ -430,6 +435,10 @@ void settings_step(int which, int d) {
     case SET_CHASE_SPEED:
         g_settings.chase_speed = kChaseSpeeds[(choice(kChaseSpeeds, COUNT(kChaseSpeeds), g_settings.chase_speed) + d +
                                                COUNT(kChaseSpeeds)) % COUNT(kChaseSpeeds)];
+        apply_gameplay();
+        break;
+    case SET_UNLOCK_PASSWORDS:
+        g_settings.unlock_passwords = !g_settings.unlock_passwords;
         apply_gameplay();
         break;
     default: return;
