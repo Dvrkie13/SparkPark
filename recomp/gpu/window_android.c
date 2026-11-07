@@ -361,11 +361,12 @@ static int find_game(const char* dir) {
 }
 
 /* RECOMP_* settings for test runs, which Android has no other way to
- * give: env.txt in the shared folder, a NAME=value a line. */
-static void read_env(const char* dir) {
+ * give: env.txt in the shared folder, a NAME=value a line, then
+ * env_test.txt, for a second test run's own. */
+static void read_env_file(const char* dir, const char* name) {
     char path[1024], line[512];
     FILE* f;
-    snprintf(path, sizeof(path), "%s/env.txt", dir);
+    snprintf(path, sizeof(path), "%s/%s", dir, name);
     if (!(f = fopen(path, "r"))) return;
     while (fgets(line, sizeof(line), f)) {
         char* eq = strchr(line, '=');
@@ -376,6 +377,11 @@ static void read_env(const char* dir) {
         fprintf(stderr, "PokePark: %s=%s\n", line, eq + 1);
     }
     fclose(f);
+}
+
+static void read_env(const char* dir) {
+    read_env_file(dir, "env.txt");
+    read_env_file(dir, "env_test.txt");
 }
 
 /* Otherwise the player's disc image (disc_image_android.c), which the

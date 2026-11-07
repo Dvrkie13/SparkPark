@@ -2312,6 +2312,12 @@ static void vs_words(const GXDrawState* st, const uint32_t* xf, uint32_t* w) {
     w[0] = 1;
     for (i = 0; i < 4; i++) w[1 + i] = xf[GX_XF_MEM_WORDS + 0x0E + i];
     w[5] = (uint32_t)st->mtx_per_vertex;
+#ifdef __ANDROID__
+    /* The matrix indices read from the vertices, which hold XF's when the
+     * vertices carry none: read from XF's registers instead, on an Adreno
+     * 830, Ponyta's flames and some trees' leaves were stretched far out. */
+    w[5] = 3;
+#endif
     /* Whether texgen_program's setup holds (no normalized coordinates
      * post-transformed), with no texture matrix indices in the vertices. */
     w[6] = !(st->mtx_per_vertex & 2);
