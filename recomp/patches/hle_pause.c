@@ -52,8 +52,12 @@ int hle_file_select_shown(void) { return sArcadeDrawn && ppc_timebase() - sArcad
  * the game checks it, says so and saves: the eight wheels are set to the
  * first password and its button pressed. When the script asks whether that
  * one was used, the file it asks about has the other six set, with the same
- * calls the script uses, and the first cleared, for it to go through. */
+ * calls the script uses, and the first cleared, for it to go through. The
+ * game has only one reward's message, with its picture: once that one's
+ * given, its kind in the script is changed for the wait for the message,
+ * for the one with no picture, "incorrect", and hle_text.c words that. */
 #define PASSWORD_CODES 0x348 /* in the script; the seven, disguised */
+#define PASSWORD_KINDS 0x380
 #define PASSWORD_WHEELS 0x4510
 #define PASSWORD_WAITING 0x47FC
 #define FIRST_PASSWORD_CODE 76753
@@ -66,12 +70,16 @@ static const uint32_t kPasswordItems[] = {2, 3}; /* the first password gives ite
 static const uint32_t kPasswordFlags[] = {159, 164, 165, 166};
 static uint64_t sPasswordShown; /* when, on the time base */
 static int sUnlockAsked, sUnlockPress, sUnlocking;
+static uint32_t sScriptCode;
+static int sUnlockedNext, sUnlockedSaying;
 
 int hle_password_screen_shown(void) { return sPasswordShown && ppc_timebase() - sPasswordShown < PPC_TB_HZ / 8; }
 
 void hle_password_unlock_all(void) {
     if (hle_password_screen_shown()) sUnlockAsked = 1;
 }
+
+int hle_password_unlock_saying(void) { return sUnlockedSaying; }
 
 int hle_password_press(void) {
     if (!sUnlockPress) return 0;
@@ -89,9 +97,14 @@ void f_802EE5D0(ppc_t* c) {
     if (!code || LD32(script) != code + PASSWORD_WAITING || LD32(code + PASSWORD_CODES) != FIRST_PASSWORD_CODE)
         return;
     sPasswordShown = ppc_timebase();
+    if (sUnlockedSaying) {
+        sUnlockedSaying = 0;
+        ST32(code + PASSWORD_KINDS, 1);
+    }
     if (!sUnlockAsked) return;
     sUnlockAsked = 0;
     for (i = 0; i < 8; i++) ST32(code + PASSWORD_WHEELS + 4 * i, "02970626"[i] - '0');
+    sScriptCode = code;
     sUnlocking = 1;
     sUnlockPress = 6;
 }
@@ -112,7 +125,8 @@ static void script_call(ppc_t* c, ppc_func fn, uint32_t self, uint32_t id, uint3
 
 /* int MenuScriptStartMenu::syscall0x15(u32 id, Value* args) */
 void f_80125F70(ppc_t* c) {
-    if (sUnlocking && c->r[4] == IS_ITEM_SET) {
+    uint32_t id = c->r[4];
+    if (sUnlocking && id == IS_ITEM_SET) {
         uint32_t menu = c->r[3], args = c->r[5], lr = c->lr, file = LD32(args), global;
         int i;
         sUnlocking = 0;
@@ -129,8 +143,14 @@ void f_80125F70(ppc_t* c) {
         c->r[4] = IS_ITEM_SET;
         c->r[5] = args;
         c->lr = lr;
+        sUnlockedNext = 1;
     }
     f_80125F70_orig(c);
+    if (sUnlockedNext && id == SET_ITEM) {
+        sUnlockedNext = 0;
+        sUnlockedSaying = 1;
+        ST32(sScriptCode + PASSWORD_KINDS, 2);
+    }
 }
 
 /* ------------------------------------------------------------------------ */

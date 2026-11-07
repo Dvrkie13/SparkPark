@@ -34,6 +34,9 @@ void hle_text_boot_setup(void) {
     ST32(0x80003110, sBase); /* MEM1 arena end */
 }
 
+/* The password screen's Unlock all button says this (hle_pause.c). */
+static const char kIncorrect[] = "Password is incorrect!";
+
 /* In the new text: [A] [B] [1] [2] are those buttons' glyphs; [up]
  * [down] [left] [right] the movement keys' names, and [shake] the two
  * shake keys'. Each replaces the message at index whose text begins with
@@ -43,6 +46,7 @@ static const struct {
     int index;
     const char *was, *key, *pad;
 } kText[] = {
+    {17, kIncorrect, "All passwords entered!", NULL},
     /* Absol's Hurdle Bounce */
     {20, "Shake the Wii Remote", "Press [shake] by turns\nto start running. The faster you\npress them, the faster you'll go!"},
     {23, "Once you've cleared the final hurdle,",
@@ -191,6 +195,7 @@ void f_801081C0(ppc_t* c) {
     if (!sBase || !c->r[3]) return;
     for (i = 0; i < TEXTS; i++) {
         if (kText[i].index != index || !begins(c->r[3], kText[i].was)) continue;
+        if (kText[i].was == kIncorrect && !hle_password_unlock_saying()) return;
         gen = g_host_prompt_generation ? g_host_prompt_generation() : 0;
         if (gen != sGeneration) {
             sGeneration = gen;

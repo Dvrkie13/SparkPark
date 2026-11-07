@@ -53,6 +53,7 @@ int hle_motion(uint32_t held, uint32_t report, int16_t acc[3], int16_t dots[4][2
 /* hle_prompts.c: redraws the button prompt glyphs if they should change. */
 void hle_prompts_update(void);
 int hle_password_press(void);
+int hle_password_unlock_saying(void);
 /* hle_pause.c: a texture of a model file, as the file is set up. */
 void hle_pause_texture(uint32_t tex);
 
