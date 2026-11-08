@@ -259,14 +259,24 @@ static void lay(const uint32_t* s, int sw, int sh, int x, int y, int y0, int y1)
 }
 
 /* The name of the place the minimap is of, as the game's Drifblim names
- * it ("Meadow Zone"): areas 3, 4 and 6 hold two zones each (Beach and
- * Iceberg, Cavern and Lava, Granite and Flower); "" if it has none. */
+ * it ("Meadow Zone", its k-th place); "" if it has none (the Sky
+ * Pavilion). A zone that isn't one of Drifblim's is part of one: the
+ * Meadow's gate (Ar01Zn02), Empoleon's courtyard on the Iceberg
+ * (Ar03Zn03), the inside of the volcano (Ar04Zn03), the Haunted Zone's
+ * mansion (Ar05Zn02, Zn03). */
 static const char* place_name(int area, int zone, char* out, int size) {
-    static const int kFirst[8] = {-1, 0, 1, 2, 4, 7, 8, -1}; /* by area, the first of the names */
-    int k;
+    static const signed char kPlace[7][3] = {
+        {1, 1, -1}, /* Ar01: Meadow */
+        {0, -1, -1}, /* Ar02: Meeting Place */
+        {2, 3, 3},  /* Ar03: Beach, Iceberg */
+        {4, 5, 5},  /* Ar04: Cavern, Lava */
+        {7, 7, 7},  /* Ar05: Haunted */
+        {8, 9, -1}, /* Ar06: Granite, Flower */
+        {-1, -1, -1}, /* Ar07: Sky Pavilion */
+    };
+    int k = area >= 1 && area <= 7 && zone >= 1 && zone <= 3 ? kPlace[area - 1][zone - 1] : -1;
     out[0] = 0;
-    if (area < 1 || area > 7 || kFirst[area] < 0) return out;
-    k = kFirst[area] + (area == 3 || area == 4 || area == 6 ? (zone == 2) : 0);
+    if (k < 0) return out;
     return hle_friends_message(0x02013880u + 10u * (uint32_t)k, out, size);
 }
 

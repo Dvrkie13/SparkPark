@@ -252,3 +252,20 @@ void f_801776E0(ppc_t* c) {
     if (sub == THP_SYS_STATE && skip && !sMovieLoops && c->r[3] == THP_PLAYING && ++sMoviePolls > SKIP_AFTER_POLLS)
         c->r[3] = THP_FINISHED;
 }
+
+/* void OtherDataSingleMode::set_target_zone_data(u8 area, u8 zone, u16
+ * entrance): where the player goes next. RECOMP_ZONE=<area>,<zone>[,<entrance>]
+ * sends them there instead, the first time, for testing. */
+void f_80127820(ppc_t* c) {
+    static int done;
+    const char* e = getenv("RECOMP_ZONE");
+    if (!done && e && *e) {
+        const char* p = strchr(e, ',');
+        done = 1;
+        c->r[4] = (uint32_t)atoi(e);
+        c->r[5] = p ? (uint32_t)atoi(p + 1) : 1;
+        p = p ? strchr(p + 1, ',') : NULL;
+        if (p) c->r[6] = (uint32_t)atoi(p + 1);
+    }
+    f_80127820_orig(c);
+}

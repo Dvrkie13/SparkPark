@@ -1110,9 +1110,11 @@ static void use_current_state(int mtx_per_vertex) {
         sStateDirty = 0;
     }
     screen = 0;
-    if (sScreenMarked && !(mtx_per_vertex & 1) && origin_in_minimap(&sState)) {
-        if (texture_is_map()) sMapDrawn = 1;
-        screen = sMapDrawn;
+    /* The map's own pieces wherever their origin is (a zone's map can be
+     * several, the Beach's), and what's drawn on it once it has been. */
+    if (sScreenMarked && !(mtx_per_vertex & 1)) {
+        if (texture_is_map()) sMapDrawn = screen = 1;
+        else if (origin_in_minimap(&sState)) screen = sMapDrawn;
     }
     if (sState.mtx_per_vertex != mtx_per_vertex || sState.screen != screen) {
         sState.mtx_per_vertex = mtx_per_vertex;
