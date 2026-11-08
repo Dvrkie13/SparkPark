@@ -253,12 +253,17 @@ void f_801776E0(ppc_t* c) {
         c->r[3] = THP_FINISHED;
 }
 
+void hle_friends_story_data(uint32_t other); /* hle_friends.c */
+
 /* void OtherDataSingleMode::set_target_zone_data(u8 area, u8 zone, u16
- * entrance): where the player goes next. RECOMP_ZONE=<area>,<zone>[,<entrance>]
- * sends them there instead, the first time, for testing. */
+ * entrance): where the player goes next, told on loading a game too, so
+ * where the story's other data is (the berries, for the second screen).
+ * RECOMP_ZONE=<area>,<zone>[,<entrance>] sends them elsewhere instead, the
+ * first time, for testing. */
 void f_80127820(ppc_t* c) {
     static int done;
     const char* e = getenv("RECOMP_ZONE");
+    hle_friends_story_data(c->r[3]);
     if (!done && e && *e) {
         const char* p = strchr(e, ',');
         done = 1;

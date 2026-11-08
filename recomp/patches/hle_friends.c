@@ -12,10 +12,15 @@
  * FriendNoteSingleModeSaveDataOne is is_best_friend), asked from the
  * minimap's drawing (hle_gx.c), which is on the game's thread in the park.
  *
+ * The map's page also says how many berries the player has (the story's
+ * OtherDataSingleMode, +0x1E) and how many of the Pokémon placed in the
+ * zone (its disposition, as DispositionManager::GetPokemonDisposition
+ * gives it: the character at +4) are friends.
+ *
  * The icons, the list's own pictures (Pause.brres: the blue tags, the
- * digits, the friend books) and the messages are all resident, found by a
- * search of memory once the list is first wanted, and decoded when first
- * drawn. */
+ * digits, the friend books, the berry) and the messages are all resident,
+ * found by a search of memory once the list is first wanted, and decoded
+ * when first drawn. */
 #include <stdlib.h>
 #include <string.h>
 
@@ -26,6 +31,8 @@
 #define MAX_ROWS 256
 #define TEX0 0x54455830u
 #define SINGLE_MODE_GET 0x801273C0u /* FriendNoteSingleModeSaveData::virt0x8 */
+#define DISPOSITION_MANAGER 0x80486454u /* DispositionManager* (r13 - 0x53CC) */
+#define BERRIES 0x1E /* OtherDataSingleMode: u16 */
 #define NAME_ID(chr) (0x01000000u | (10000u + (chr)))
 
 uint32_t* hle_pause_decode(uint32_t tex, int* w, int* h); /* hle_pause.c */
@@ -46,11 +53,13 @@ static struct {
 static int sCount;       /* rows, Pikachu left out */
 static uint32_t sTable;  /* FriendNoteData's entries the rows are of */
 static uint32_t sBmg;    /* the messages with the names */
+static uint32_t sOther;  /* the story's OtherDataSingleMode, 0 until known */
+static int sBerries = -1, sHere = -1, sHereOf;
 static uint64_t sSearched, sWanted;
 static int sSearches; /* since the rows were set up */
 static unsigned sChanges;
 
-static const char* const kPics[] = {"IcQuestion01", "FriendIcon", "PmFriendListNumMat", "PmFriendsMat", "PmFriendsMatA"};
+static const char* const kPics[] = {"IcQuestion01", "FriendIcon", "PmFriendListNumMat", "PmFriendsMat", "PmFriendsMatA", "NutIcon"};
 #define PICS ((int)(sizeof(kPics) / sizeof(kPics[0])))
 static Pic sPics[PICS];
 
@@ -195,6 +204,19 @@ int hle_friends_rows(void) {
 
 unsigned hle_friends_changes(void) { return sChanges; }
 
+/* hle_game.c: where the story's other data is (set_target_zone_data's). */
+void hle_friends_story_data(uint32_t other) { sOther = other; }
+
+/* The player's berries; -1 if not known yet. */
+int hle_friends_berries(void) { return sBerries; }
+
+/* How many of the Pokémon in the zone are friends, of *of; -1 if not
+ * known yet. */
+int hle_friends_here(int* of) {
+    *of = sHereOf;
+    return sHere;
+}
+
 /* A message of the resident ones, as Latin-1; "" if there's none. */
 const char* hle_friends_message(uint32_t id, char* out, int size) {
     uint32_t s = sBmg && LD32(sBmg) == 0x4D455347u ? message(sBmg, id) : 0;
@@ -277,6 +299,41 @@ void hle_friends_update(ppc_t* c) {
         }
         if (status != sRows[i].status) {
             sRows[i].status = status;
+            changed = 1;
+        }
+    }
+    /* The berries, and the zone's Pokémon: each once, those in the list. */
+    {
+        int berries = sOther && phys_ok(sOther) ? LD16(sOther + BERRIES) : -1, here = -1, of = 0;
+        uint32_t mgr = LD32(DISPOSITION_MANAGER), seen[256], n, k, j;
+        /* Only once the zone's placements are loaded (IsPrepared): until
+         * then the resource they're found by (+0x28) may not be there. */
+        if (phys_ok(mgr) && LD8(mgr + 0xC) && LD32(mgr + 0x28) != ~0u) {
+            c->r[3] = mgr;
+            f_8013BF60(c); /* GetPokemonDispositionCount */
+            n = c->r[3] & 0xFF;
+            here = 0;
+            for (k = 0; k < n; k++) {
+                uint32_t at, chr;
+                c->r[3] = mgr;
+                c->r[4] = k;
+                f_8013BD80(c); /* GetPokemonDisposition */
+                at = c->r[3];
+                if (!phys_ok(at)) continue;
+                chr = LD32(at + 4);
+                seen[k] = chr;
+                for (j = 0; j < k && seen[j] != chr; j++) {}
+                if (j < k) continue;
+                for (i = 0; i < sCount && sRows[i].chr != chr; i++) {}
+                if (i == sCount) continue;
+                of++;
+                if (sRows[i].status) here++;
+            }
+        }
+        if (berries != sBerries || here != sHere || of != sHereOf) {
+            sBerries = berries;
+            sHere = here;
+            sHereOf = of;
             changed = 1;
         }
     }

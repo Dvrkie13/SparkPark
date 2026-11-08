@@ -3,8 +3,9 @@
  * with its number, icon and name, and the pink book of a friend or the
  * rainbow one of a best friend (one not yet befriended is "???", as the
  * Pad shows it); on its right page the minimap, as a photo stuck in, with
- * the zone's name written under it: the frame drawn here, the map in it
- * by vk_backend.c, where friends_draw says. All in the game's pictures and font
+ * the zone's name written under it (the frame drawn here, the map in it
+ * by vk_backend.c, where friends_draw says), and under that the player's
+ * berries and how many of the zone's Pokémon are friends. All in the game's pictures and font
  * (hle_friends.c, hle_pause.c), each Pokémon on a slip of its paper;
  * the list scrolls by dragging it.
  *
@@ -27,6 +28,8 @@ const uint32_t* hle_pause_image(const char* name, const char* alpha, int* w, int
 double second_map_aspect(void); /* vk_backend.c */
 int gx_minimap_place(int* zone);   /* gx_fifo.c */
 const char* hle_friends_message(uint32_t id, char* out, int size);
+int hle_friends_berries(void);
+int hle_friends_here(int* of);
 
 /* In picture units: the screen is 1080 high, W() wide. */
 #define REF_H 1080.0f
@@ -78,15 +81,15 @@ static Rect part(Rect page, float x0, float y0, float x1, float y1) {
 static Rect list_rect(void) { return part(left_page(), 0.135f, 0.15f, 0.91f, 0.93f); }
 
 /* The map, at its shape, as large as fits in its part of the page with
- * the photo's border around it. */
+ * the photo's border around it, at the part's top. */
 static Rect map_rect(void) {
-    Rect in = part(right_page(), 0.11f, 0.15f, 0.77f, 0.92f), r;
+    Rect in = part(right_page(), 0.11f, 0.15f, 0.77f, 0.72f), r;
     float aspect = (float)second_map_aspect(), w = in.x1 - in.x0 - 2 * PHOTO_EDGE;
     float h = in.y1 - in.y0 - PHOTO_EDGE - CAPTION;
     if (w > h * aspect) w = h * aspect;
     else h = w / aspect;
     r.x0 = (in.x0 + in.x1 - w) / 2;
-    r.y0 = (in.y0 + in.y1 - h - CAPTION + PHOTO_EDGE) / 2;
+    r.y0 = in.y0 + PHOTO_EDGE;
     r.x1 = r.x0 + w;
     r.y1 = r.y0 + h;
     return r;
@@ -280,6 +283,39 @@ static const char* place_name(int area, int zone, char* out, int size) {
     return hle_friends_message(0x02013880u + 10u * (uint32_t)k, out, size);
 }
 
+/* A line of the page's notes, its middle at y: an icon (part src of
+ * picture name), what it is, and its number at the right, x0 to x1. */
+static void draw_note(const char* name, Rect src, const char* what, const char* number, float x0, float x1, float y) {
+    int w, h;
+    const uint32_t* img = hle_friends_picture(name, &w, &h);
+    if (img) {
+        Rect dst = {x0, y - 30, x0 + 60 * (src.x1 - src.x0) / (src.y1 - src.y0), y + 30};
+        draw_image(img, w, h, src, dst, 0xFFFFFF, 0);
+    }
+    draw_text(what, x0 + 76, y, 40, ALIGN_LEFT, BROWN, 0, 0, 1, 0);
+    draw_number(number, x1, y + 2, 34);
+}
+
+/* Under the photo (x0 to x1, from y): the berries, and the zone's friends. */
+static void draw_counts(float x0, float x1, float y) {
+    char text[24];
+    int berries = hle_friends_berries(), of, here = hle_friends_here(&of), w, h;
+    float at = y + 0.075f * REF_H;
+    x0 += 12;
+    x1 -= 12;
+    if (berries >= 0) {
+        Rect src = {0, 0, 32, 32};
+        snprintf(text, sizeof(text), "%d", berries);
+        draw_note("NutIcon", src, "Berries", text, x0, x1, at);
+        at += 0.08f * REF_H;
+    }
+    if (here >= 0 && of > 0 && hle_friends_picture("FriendIcon", &w, &h)) {
+        Rect src = {0, 0, w / 2.0f, (float)h};
+        snprintf(text, sizeof(text), "%d/%d", here, of);
+        draw_note("FriendIcon", src, "Friends here", text, x0, x1, at);
+    }
+}
+
 /* The pages and their titles: what doesn't change while the zone
  * doesn't. */
 static void draw_pages(int area, int zone) {
@@ -302,6 +338,7 @@ static void draw_pages(int area, int zone) {
     }
     if (place_name(area, zone, name, sizeof(name))[0])
         draw_text(name, (m.x0 + m.x1) / 2, m.y1 + CAPTION / 2 + 2, 46, ALIGN_CENTRE, BROWN, 0, 0, 1, m.x1 - m.x0);
+    draw_counts(m.x0 - PHOTO_EDGE, m.x1 + PHOTO_EDGE, m.y1 + CAPTION);
 }
 
 void friends_touch(int action, float x, float y) {
