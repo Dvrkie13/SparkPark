@@ -45,14 +45,17 @@ int gxb_display_hz(void);
 /* What's on it */
 
 #ifdef __ANDROID__
-/* No keyboard: its section isn't there. */
-enum { SEC_DISPLAY, SEC_CONTROLLER, SEC_GAMEPLAY, SECTIONS, SEC_KEYBOARD = -1 };
-static const char* const kSection[SECTIONS] = {"Display", "Controller", "Gameplay"};
-static const int kSectionColor[SECTIONS] = {0, 2, 3}; /* which of the Pad's button colors */
+/* No keyboard: its section isn't there. Dual screen is, in its place,
+ * only on a handheld with two screens. */
+enum { SEC_DISPLAY, SEC_CONTROLLER, SEC_GAMEPLAY, SEC_DUAL, SECTIONS, SEC_KEYBOARD = -1 };
+static const char* const kSection[SECTIONS] = {"Display", "Controller", "Gameplay", "Dual screen"};
+static const int kSectionColor[SECTIONS] = {0, 2, 3, 1}; /* which of the Pad's button colors */
+static int sections(void) { return second_screen_device() ? SECTIONS : SEC_DUAL; }
 #else
-enum { SEC_DISPLAY, SEC_KEYBOARD, SEC_CONTROLLER, SEC_GAMEPLAY, SECTIONS };
+enum { SEC_DISPLAY, SEC_KEYBOARD, SEC_CONTROLLER, SEC_GAMEPLAY, SECTIONS, SEC_DUAL = -1 };
 static const char* const kSection[SECTIONS] = {"Display", "Keyboard", "Controller", "Gameplay"};
 static const int kSectionColor[SECTIONS] = {0, 1, 2, 3};
+static int sections(void) { return SECTIONS; }
 #endif
 
 /* A row: a setting (settings_step), a binding (an action), resetting the
@@ -74,8 +77,6 @@ static const Row kDisplay[] = {
     {ROW_SETTING, SET_FOV, "Field of view"},       {ROW_SETTING, SET_ANISO, "Filtering"},
 #ifndef __ANDROID__
     {ROW_SETTING, SET_RENDERER, "Renderer"},
-#else
-    {ROW_SETTING, SET_MINIMAP_TOP, "Top screen map"},
 #endif
     {ROW_SETTING, SET_UPDATES, "Updates"},
     {ROW_CLOSE, 0, "Close game"},
@@ -87,6 +88,12 @@ static const Row kGameplay[] = {
     {ROW_SETTING, SET_DAMAGE_DEALT, "Damage dealt"},
     {ROW_SETTING, SET_DAMAGE_TAKEN, "Damage taken"},
     {ROW_SETTING, SET_CHASE_SPEED, "Chase speed"},
+};
+static const Row kDual[] = {
+    {ROW_SETTING, SET_DUAL_SCREEN, "Dual screen"},
+    {ROW_SETTING, SET_SWAP_SCREENS, "Swap screens"},
+    {ROW_SETTING, SET_MINIMAP_TOP, "Map on main"},
+    {ROW_SETTING, SET_FRIENDS_LIST, "Friends list"},
 };
 static const char* const kAction[ACT_COUNT] = {
     "Up", "Down", "Left", "Right", "2: Jump", "1: Dash", "A: Thunderbolt", "B: Camera", "+: Pad", "-: Map", "First person",
@@ -104,6 +111,7 @@ static const char* const kAction[ACT_COUNT] = {
 static int row_count(int sec) {
     return sec == SEC_DISPLAY    ? (int)(sizeof(kDisplay) / sizeof(kDisplay[0]))
            : sec == SEC_GAMEPLAY ? (int)(sizeof(kGameplay) / sizeof(kGameplay[0]))
+           : sec == SEC_DUAL     ? (int)(sizeof(kDual) / sizeof(kDual[0]))
            : sec == SEC_KEYBOARD ? ACT_COUNT + 3 /* camera speed, invert, reset */
                                  : TOUCH_ROW + ACT_COUNT + 2; /* (touch controls,) rumble, reset */
 }
@@ -112,6 +120,7 @@ static Row row_at(int sec, int i) {
     Row r = {ROW_RESET, 0, "Reset all controls"};
     if (sec == SEC_DISPLAY) return kDisplay[i];
     if (sec == SEC_GAMEPLAY) return kGameplay[i];
+    if (sec == SEC_DUAL) return kDual[i];
     if (TOUCH_ROW && sec == SEC_CONTROLLER && i-- == 0) {
         r.kind = ROW_SETTING;
         r.which = SET_TOUCH;
@@ -157,6 +166,9 @@ static void setting_text(int which, char* out, size_t n) {
     case SET_INVERT: snprintf(out, n, g_settings.invert_tilt ? "On" : "Off"); break;
     case SET_TOUCH: snprintf(out, n, g_settings.touch_controls ? "On" : "Off"); break;
     case SET_MINIMAP_TOP: snprintf(out, n, g_settings.minimap_top ? "On" : "Off"); break;
+    case SET_DUAL_SCREEN: snprintf(out, n, g_settings.dual_screen ? "On" : "Off"); break;
+    case SET_SWAP_SCREENS: snprintf(out, n, g_settings.swap_screens ? "On" : "Off"); break;
+    case SET_FRIENDS_LIST: snprintf(out, n, g_settings.friends_list ? "On" : "Off"); break;
     case SET_ANISO: snprintf(out, n, g_settings.aniso == 1 ? "Original" : "%dx", g_settings.aniso); break;
     case SET_RENDERER:
         snprintf(out, n, "%s%s", g_settings.renderer == RENDERER_VULKAN ? "Vulkan" : "OpenGL",
@@ -248,7 +260,7 @@ static void show_row(void) {
 
 static void up_down(int d) {
     if (!sOnRows) {
-        sSection = (sSection + d + SECTIONS) % SECTIONS;
+        sSection = (sSection + d + sections()) % sections();
         sRow = sTop = sSlot = 0;
     } else {
         sRow = (sRow + d + row_count(sSection)) % row_count(sSection);
@@ -473,7 +485,8 @@ static void draw_book(void) {
 
     /* The sections, as the Pad's buttons: each in its pocket, the chosen
      * one orange. */
-    for (i = 0; i < SECTIONS; i++) {
+    if (sSection >= sections()) sSection = 0;
+    for (i = 0; i < sections(); i++) {
         Rect src = kBlue[kSectionColor[i]];
         Rect at = kButton[i];
         if (i == sSection) {
@@ -488,7 +501,7 @@ static void draw_book(void) {
 
     /* The section's settings, a bar each as the Pad's counts are shown. */
     draw_text(kSection[sSection], 1192, 88, 52, ALIGN_CENTRE, BROWN, 0, 0, 1, 0);
-    if (sSection != SEC_DISPLAY && sSection != SEC_GAMEPLAY) {
+    if (sSection == SEC_KEYBOARD || sSection == SEC_CONTROLLER) {
         draw_text("Slot 1", slot_x(0), 124, 24, ALIGN_CENTRE, 0xFF8A7458u, 0, 0, 0, 0);
         draw_text("Slot 2", slot_x(1), 124, 24, ALIGN_CENTRE, 0xFF8A7458u, 0, 0, 0, 0);
     }
@@ -651,7 +664,7 @@ static int click(int mx, int my) {
         set_open(0);
         return 1;
     }
-    for (i = 0; i < SECTIONS; i++) {
+    for (i = 0; i < sections(); i++) {
         if (in(kButton[i], x, y)) {
             sSection = i;
             sOnRows = 0;

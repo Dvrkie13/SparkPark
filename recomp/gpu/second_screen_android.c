@@ -3,6 +3,13 @@
  * its surface and touches here; the game's thread draws in it with Vulkan
  * (vk_backend.c), taking the window at its next frame after it changes.
  *
+ * Only on a handheld with two screens (dualScreenHandheld: a second
+ * built-in screen, a controller, no phone), and only while the Dual screen
+ * setting is on: the game's thread opens and closes the window as it says
+ * (second_screen_apply). With the screens swapped the game is drawn there,
+ * so its touches go to the touch controls (input_android.c) and the main
+ * screen's to the friends list.
+ *
  * The surface's callbacks come on the activity's UI thread; when one goes,
  * the callback waits (a second at most) for the game's thread to let go
  * of it, as Android takes it away once the callback returns. */
@@ -12,6 +19,17 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <time.h>
+
+#include "host_settings.h"
+
+void input_android_touch(int action, int id, float x, float y); /* input_android.c */
+void win_size(int* w, int* h);                                   /* window_android.c */
+
+static JavaVM* sVm;
+static jobject sActivity;
+static int sDevice; /* a handheld with two screens */
+static int sShown = -1;
+static int sW, sH;  /* the window's size */
 
 static pthread_mutex_t sLock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t sChanged = PTHREAD_COND_INITIALIZER;
@@ -26,6 +44,40 @@ typedef struct {
 } Touch;
 static Touch sTouches[64];
 static unsigned sTouchIn, sTouchOut;
+static int sPrimary = -1; /* the pointer whose touches go to the list */
+
+int second_screen_device(void) { return sDevice; }
+int second_screen_used(void) { return sDevice && g_settings.dual_screen; }
+int second_screens_swapped(void) { return second_screen_used() && g_settings.swap_screens; }
+
+/* The game's picture's size: the main window's, or this one's swapped. */
+void game_screen_size(int* w, int* h) {
+    int sw, sh;
+    pthread_mutex_lock(&sLock);
+    sw = sWindow ? sW : 0;
+    sh = sWindow ? sH : 0;
+    pthread_mutex_unlock(&sLock);
+    if (second_screens_swapped() && sw > 0 && sh > 0) {
+        *w = sw;
+        *h = sh;
+    } else {
+        win_size(w, h);
+    }
+}
+
+/* A touch for the friends list: the first pointer down's, until it's up. */
+void second_touch_push(int action, int id, float x, float y) {
+    pthread_mutex_lock(&sLock);
+    if (action == 0 && sPrimary < 0) sPrimary = id;
+    if (id == sPrimary && sTouchIn - sTouchOut < sizeof(sTouches) / sizeof(sTouches[0])) {
+        Touch* t = &sTouches[sTouchIn++ % (sizeof(sTouches) / sizeof(sTouches[0]))];
+        t->action = action;
+        t->x = x;
+        t->y = y;
+    }
+    if (action == 1 && id == sPrimary) sPrimary = -1;
+    pthread_mutex_unlock(&sLock);
+}
 
 static void JNICALL second_surface(JNIEnv* env, jclass cls, jobject surface, jint w, jint h) {
     ANativeWindow* win = surface ? ANativeWindow_fromSurface(env, surface) : NULL;
@@ -35,6 +87,8 @@ static void JNICALL second_surface(JNIEnv* env, jclass cls, jobject surface, jin
     pthread_mutex_lock(&sLock);
     old = sWindow;
     sWindow = win;
+    sW = w;
+    sH = h;
     sGen++;
     if (old && old != win) {
         struct timespec until;
@@ -46,37 +100,56 @@ static void JNICALL second_surface(JNIEnv* env, jclass cls, jobject surface, jin
     if (old) ANativeWindow_release(old);
 }
 
-static void JNICALL second_touch(JNIEnv* env, jclass cls, jint action, jfloat x, jfloat y) {
+static void JNICALL second_touch(JNIEnv* env, jclass cls, jint action, jint id, jfloat x, jfloat y) {
     (void)env;
     (void)cls;
-    pthread_mutex_lock(&sLock);
-    if (sTouchIn - sTouchOut < sizeof(sTouches) / sizeof(sTouches[0])) {
-        Touch* t = &sTouches[sTouchIn++ % (sizeof(sTouches) / sizeof(sTouches[0]))];
-        t->action = action;
-        t->x = x;
-        t->y = y;
-    }
-    pthread_mutex_unlock(&sLock);
+    if (second_screens_swapped()) input_android_touch(action, id, x, y);
+    else second_touch_push(action, id, x, y);
 }
 
-/* Registers the activity's native methods here and asks it for the
- * window, on the activity's thread. */
-void second_screen_start(JavaVM* vm, jobject activity) {
-    static const JNINativeMethod kMethods[] = {
-        {"secondSurface", "(Landroid/view/Surface;II)V", (void*)second_surface},
-        {"secondTouch", "(IFF)V", (void*)second_touch},
-    };
-    JNIEnv* env;
-    jclass cls;
-    if ((*vm)->AttachCurrentThread(vm, &env, NULL) != JNI_OK) return;
-    cls = (*env)->GetObjectClass(env, activity);
-    if ((*env)->RegisterNatives(env, cls, kMethods, 2) == 0)
-        (*env)->CallVoidMethod(env, activity, (*env)->GetMethodID(env, cls, "showSecondScreen", "()V"));
+static void call(JNIEnv* env, const char* method) {
+    jclass cls = (*env)->GetObjectClass(env, sActivity);
+    (*env)->CallVoidMethod(env, sActivity, (*env)->GetMethodID(env, cls, method, "()V"));
     if ((*env)->ExceptionCheck(env)) {
         (*env)->ExceptionDescribe(env);
         (*env)->ExceptionClear(env);
     }
     (*env)->DeleteLocalRef(env, cls);
+}
+
+/* Registers the activity's native methods here and asks whether this is a
+ * handheld with two screens, on the activity's thread. */
+void second_screen_start(JavaVM* vm, jobject activity) {
+    static const JNINativeMethod kMethods[] = {
+        {"secondSurface", "(Landroid/view/Surface;II)V", (void*)second_surface},
+        {"secondTouch", "(IIFF)V", (void*)second_touch},
+    };
+    JNIEnv* env;
+    jclass cls;
+    if ((*vm)->AttachCurrentThread(vm, &env, NULL) != JNI_OK) return;
+    cls = (*env)->GetObjectClass(env, activity);
+    if ((*env)->RegisterNatives(env, cls, kMethods, 2) == 0) {
+        sDevice = (*env)->CallBooleanMethod(env, activity, (*env)->GetMethodID(env, cls, "dualScreenHandheld", "()Z"));
+        sActivity = (*env)->NewGlobalRef(env, activity);
+        sVm = vm;
+    }
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionDescribe(env);
+        (*env)->ExceptionClear(env);
+        sDevice = 0;
+    }
+    (*env)->DeleteLocalRef(env, cls);
+}
+
+/* On the game's thread, each frame: the window opened or closed as the
+ * Dual screen setting says. */
+void second_screen_apply(void) {
+    JNIEnv* env;
+    int want = second_screen_used();
+    if (want == sShown || !sVm) return;
+    if ((*sVm)->AttachCurrentThread(sVm, &env, NULL) != JNI_OK) return;
+    sShown = want;
+    call(env, want ? "showSecondScreen" : "hideSecondScreen");
 }
 
 /* For the game's thread: how many times the window changed, and the

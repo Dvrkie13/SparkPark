@@ -38,7 +38,12 @@ typedef struct {
     int renderer;            /* RENDERER_*: what draws, from the next start */
     int rumble;              /* controller rumble: 0 off, 1 light, 2 normal, 3 strong */
     int touch_controls;      /* Android: the touch screen's controls, shown while it was used last; 0 never */
-    int minimap_top;         /* Android, with a second screen: the minimap there and on the game's screen too */
+    /* Android, on a handheld with two screens (second_screen_device):
+     * otherwise all taken as off. */
+    int dual_screen;         /* the second screen used: the Pad's pages there */
+    int swap_screens;        /* the game on the second screen, the Pad's pages on the main one */
+    int minimap_top;         /* the minimap on the game's screen too */
+    int friends_list;        /* the Pad's pages with the friends list; 0: the map alone */
     int text_speed;          /* dialogue: 1 (the game's), 2, 3, or 0 (a page at once) */
     int berries;             /* berries collected, percent of the game's */
     int prices;              /* berries spent, percent of the game's */
@@ -74,7 +79,8 @@ void prompts_init(void);
 /* What settings_step changes. */
 enum { SET_FULLSCREEN, SET_SCALE, SET_MSAA, SET_FRAME_RATE, SET_FOV, SET_SENSITIVITY, SET_INVERT, SET_ANISO,
        SET_RUMBLE, SET_TEXT_SPEED, SET_BERRIES, SET_PRICES,
-       SET_DAMAGE_DEALT, SET_DAMAGE_TAKEN, SET_CHASE_SPEED, SET_RENDERER, SET_TOUCH, SET_UPDATES, SET_MINIMAP_TOP };
+       SET_DAMAGE_DEALT, SET_DAMAGE_TAKEN, SET_CHASE_SPEED, SET_RENDERER, SET_TOUCH, SET_UPDATES, SET_MINIMAP_TOP,
+       SET_DUAL_SCREEN, SET_SWAP_SCREENS, SET_FRIENDS_LIST };
 /* Changes a setting a step (d: -1 or 1; on and off settings flip), applies
  * and saves it. */
 void settings_step(int which, int d);
@@ -135,3 +141,12 @@ unsigned menu_generation(void);
  * Touches (0 down, 1 up, 2 moved, in its pixels) scroll the list. */
 const uint32_t* friends_draw(int w, int h, int* changed, int* map);
 void friends_touch(int action, float x, float y);
+#ifdef __ANDROID__
+/* A second screen (second_screen_android.c): whether this is a handheld
+ * with two (a second built-in screen to show on, a controller, and no
+ * phone in it), whether the second is used (the setting, on one), and
+ * whether the screens are swapped (the game there). */
+int second_screen_device(void);
+int second_screen_used(void);
+int second_screens_swapped(void);
+#endif

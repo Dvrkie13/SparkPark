@@ -2619,12 +2619,12 @@ static void fit_map(const int* in, double k, int* r) {
 double second_map_aspect(void) { return (kMapRect[2] - kMapRect[0]) * sPixelAspect / (kMapRect[3] - kMapRect[1]); }
 
 /* Where the minimap goes in sBottom (x, y, w, h) with no friends list:
- * in its first half (the left, or the top). */
+ * as large as fits. */
 static void bottom_layout(int w, int h, int* r) {
     int in[4];
     in[0] = in[1] = 0;
-    in[2] = w >= h ? w / 2 : w;
-    in[3] = w >= h ? h : h / 2;
+    in[2] = w;
+    in[3] = h;
     fit_map(in, 0.92, r);
 }
 
@@ -2732,6 +2732,15 @@ static void draw_bottom(void) {
      * they changed, and the map on them where they say. */
     list_touches();
     list = friends_draw(sBottomW, sBottomH, changed, in);
+#ifdef __ANDROID__
+    {
+        /* With the setting off, the map alone; on again, all uploaded. */
+        static int was = 1;
+        if (!g_settings.friends_list) list = NULL;
+        if (list && !was) changed[0] = 1;
+        was = list != NULL;
+    }
+#endif
     if (list) {
         Tex* t = &sTex[TEX_LIST];
         if (t->im.w != sBottomW || t->im.h != sBottomH) {
@@ -2829,6 +2838,7 @@ static void copy_to_chain(const Image* from, VkImage to, int w, int h) {
 struct ANativeWindow* second_window_take(unsigned* gen); /* second_screen_android.c */
 void second_window_drop(void);
 unsigned second_window_gen(void);
+void second_screen_apply(void);
 static unsigned sSecondGen = ~0u; /* the window's, as last taken */
 
 static void drop_chain2(void) {
@@ -2903,7 +2913,9 @@ static void make_chain2(void) {
 /* The second screen's swapchain, made again when its window changed or
  * it's out of date. */
 static void second_chain(void) {
-    unsigned gen = second_window_gen();
+    unsigned gen;
+    second_screen_apply();
+    gen = second_window_gen();
     if (gen == sSecondGen && !sChain2Stale) return;
     wait_idle();
     sChain2Stale = 0;
@@ -2920,13 +2932,14 @@ static void second_chain(void) {
     if (sSurface2) make_chain2();
 }
 
-/* The second screen's image, acquired and drawn, with the main one's. */
-static void second_out(void) {
+/* The second screen's image, acquired and drawn (from what: sBottom, or
+ * the game's picture swapped), with the main one's. */
+static void second_out(const Image* what) {
     VkResult r;
-    if (!sChain2 || sBottom.w != sChain2W || sBottom.h != sChain2H) return;
+    if (!sChain2 || what->w != sChain2W || what->h != sChain2H) return;
     r = vkAcquireNextImageKHR(sDev, sChain2, 0, S->acquired2, VK_NULL_HANDLE, &sImage2);
     if (r == VK_SUCCESS || r == VK_SUBOPTIMAL_KHR) {
-        copy_to_chain(&sBottom, sChain2Images[sImage2], sChain2W, sChain2H);
+        copy_to_chain(what, sChain2Images[sImage2], sChain2W, sChain2H);
         sAcquired2 = 1;
     } else if (r != VK_NOT_READY && r != VK_TIMEOUT) {
         sChain2Stale = 1;
@@ -2940,7 +2953,7 @@ static void second_chain(void) {
     checked = 1;
     if ((e = getenv("RECOMP_GX_SECOND")) && sscanf(e, "%dx%d", &sBottomW, &sBottomH) != 2) sBottomW = sBottomH = 0;
 }
-static void second_out(void) {}
+static void second_out(const Image* what) { (void)what; }
 #endif
 
 static void draw_common(const GXDrawState* st, const uint32_t* xf, VkBuffer vb, VkBuffer ib, int32_t base_vertex,
@@ -3382,55 +3395,70 @@ static void vk_copy(int target, int x, int y, int w, int h, int fmt, int intensi
 }
 
 static int vk_present(int x, int y, int cw, int ch, int may_drop) {
-    int w, h, dw, dh, acquired = 0, dropped = 0, dump;
+    int w, h, gw, gh, dw, dh, acquired = 0, dropped = 0, dump, swap = 0;
     uint32_t image = 0;
     double aspect;
     Quad q;
     win_size(&w, &h);
     end_efb();
+    gw = w;
+    gh = h;
     dump = sDumpDir && sPresented >= sDumpFrom && sPresented % (unsigned)sDumpEvery == 0 && w > 0 && h > 0;
     if (w > 0 && h > 0) {
         const uint32_t* menu;
         VkRenderingAttachmentInfo ca = {VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
         VkRenderingInfo ri = {VK_STRUCTURE_TYPE_RENDERING_INFO};
-        if (sWin.w != w || sWin.h != h) {
-            drop_image(&sWin);
-            sWin = make_image(w, h, 1, VK_FORMAT_R8G8B8A8_UNORM,
-                              VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_SAMPLE_COUNT_1_BIT);
-        }
         present_done(); /* which may have found the swapchain out of date */
         if (sChainStale || sChainW != w || sChainH != h) make_swapchain(w, h);
         second_chain();
+#ifdef __ANDROID__
+        /* The screens swapped: the game's picture (gw by gh) on the second
+         * screen, the Pad's pages on the main one. */
+        swap = sChain2 && second_screens_swapped();
+        if (sChain2) {
+            sBottomW = swap ? w : sChain2W;
+            sBottomH = swap ? h : sChain2H;
+        }
+        if (swap) {
+            gw = sChain2W;
+            gh = sChain2H;
+        }
+#endif
+        if (sWin.w != gw || sWin.h != gh) {
+            drop_image(&sWin);
+            sWin = make_image(gw, gh, 1, VK_FORMAT_R8G8B8A8_UNORM,
+                              VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_SAMPLE_COUNT_1_BIT);
+        }
         /* The settings menu, uploaded before the frame's commands run. */
-        menu = menu_draw(w, h);
+        menu = menu_draw(gw, gh);
         if (menu) {
             Tex* m = &sTex[TEX_MENU];
 #ifdef __ANDROID__
             /* Uploaded only when it changed: a phone's screen is a lot to
              * copy every frame. */
             static unsigned uploaded = ~0u;
-            int same = menu_generation() == uploaded && m->im.w == w && m->im.h == h;
+            int same = menu_generation() == uploaded && m->im.w == gw && m->im.h == gh;
             uploaded = menu_generation();
 #else
             int same = 0;
 #endif
-            if (m->im.w != w || m->im.h != h) {
+            if (m->im.w != gw || m->im.h != gh) {
                 drop_image(&m->im);
-                m->im = make_image(w, h, 1, VK_FORMAT_B8G8R8A8_UNORM,
+                m->im = make_image(gw, gh, 1, VK_FORMAT_B8G8R8A8_UNORM,
                                    VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_SAMPLE_COUNT_1_BIT);
                 m->sampler = sLinearClamp;
                 set_texture(TEX_MENU);
             }
-            if (!same) upload(S->up, m, w, h, 1, (const uint8_t*)menu);
+            if (!same) upload(S->up, m, gw, gh, 1, (const uint8_t*)menu);
         }
         /* The copied rectangle of the EFB, as large as fits in the window
          * at the shape it has on a TV, with black bars left over. */
         aspect = ch > 0 ? cw * sPixelAspect / ch : 1;
-        dw = w;
-        dh = (int)(w / aspect + 0.5);
-        if (dh > h) {
-            dh = h;
-            dw = (int)(h * aspect + 0.5);
+        dw = gw;
+        dh = (int)(gw / aspect + 0.5);
+        if (dh > gh) {
+            dh = gh;
+            dw = (int)(gh * aspect + 0.5);
         }
         efb_settle();
         transition(S->cb, &sEfb, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -3440,15 +3468,15 @@ static int vk_present(int x, int y, int cw, int ch, int may_drop) {
         ca.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         ca.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         ca.clearValue.color.float32[3] = 1;
-        ri.renderArea.extent.width = (uint32_t)w;
-        ri.renderArea.extent.height = (uint32_t)h;
+        ri.renderArea.extent.width = (uint32_t)gw;
+        ri.renderArea.extent.height = (uint32_t)gh;
         ri.layerCount = 1;
         ri.colorAttachmentCount = 1;
         ri.pColorAttachments = &ca;
         vkCmdBeginRendering(S->cb, &ri);
         use_pipeline(pipeline(PK_BLIT, 0));
-        set_viewport((float)((w - dw) / 2), (float)((h - dh) / 2), (float)dw, (float)dh, 0, 1);
-        set_scissor(0, 0, w, h);
+        set_viewport((float)((gw - dw) / 2), (float)((gh - dh) / 2), (float)dw, (float)dh, 0, 1);
+        set_scissor(0, 0, gw, gh);
         set_cull(VK_CULL_MODE_NONE);
         set_depth(0, 0, VK_COMPARE_OP_ALWAYS);
         memset(&q, 0, sizeof(q));
@@ -3460,7 +3488,7 @@ static int vk_present(int x, int y, int cw, int ch, int may_drop) {
         quad(&q);
         if (menu) {
             use_pipeline(pipeline(PK_BLIT, 1));
-            set_viewport(0, 0, (float)w, (float)h, 0, 1);
+            set_viewport(0, 0, (float)gw, (float)gh, 0, 1);
             q.src[0] = q.src[1] = 0;
             q.src[2] = q.src[3] = 1;
             q.tex = TEX_MENU;
@@ -3489,7 +3517,7 @@ static int vk_present(int x, int y, int cw, int ch, int may_drop) {
         }
         if (dump) {
             VkBufferImageCopy r;
-            VkDeviceSize bytes = (VkDeviceSize)w * h * 4;
+            VkDeviceSize bytes = (VkDeviceSize)gw * gh * 4;
             if (sReadback.size < bytes) {
                 drop_buffer(&sReadback);
                 sReadback = make_buffer(bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
@@ -3499,8 +3527,8 @@ static int vk_present(int x, int y, int cw, int ch, int may_drop) {
             memset(&r, 0, sizeof(r));
             r.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
             r.imageSubresource.layerCount = 1;
-            r.imageExtent.width = (uint32_t)w;
-            r.imageExtent.height = (uint32_t)h;
+            r.imageExtent.width = (uint32_t)gw;
+            r.imageExtent.height = (uint32_t)gh;
             r.imageExtent.depth = 1;
             vkCmdCopyImageToBuffer(S->cb, sWin.img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, sReadback.buf, 1, &r);
         }
@@ -3516,8 +3544,8 @@ static int vk_present(int x, int y, int cw, int ch, int may_drop) {
                 bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
                 CHECK(vkBeginCommandBuffer(S->out, &bi));
                 if (r == VK_SUBOPTIMAL_KHR && !SUBOPTIMAL_IS_EXPECTED) sChainStale = 1;
-                copy_to_chain(&sWin, sChainImages[image], w, h);
-                second_out();
+                copy_to_chain(swap && sBottom.w == w && sBottom.h == h ? &sBottom : &sWin, sChainImages[image], w, h);
+                second_out(swap ? &sWin : &sBottom);
             } else if (r == VK_NOT_READY || r == VK_TIMEOUT) {
                 dropped = 1;
             } else {
@@ -3526,7 +3554,7 @@ static int vk_present(int x, int y, int cw, int ch, int may_drop) {
         }
     }
     sMapCount = 0;
-    end_slot(acquired, image, dump, w, h);
+    end_slot(acquired, image, dump, gw, gh);
     sPresented++;
     return dropped;
 }

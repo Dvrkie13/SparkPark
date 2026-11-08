@@ -6,11 +6,13 @@ import android.app.Presentation;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.hardware.display.DisplayManager;
 import android.net.Uri;
 import android.os.ParcelFileDescriptor;
 import android.util.Log;
 import android.view.Display;
+import android.view.InputDevice;
 import android.view.MotionEvent;
 import android.view.Surface;
 import android.view.SurfaceHolder;
@@ -30,7 +32,8 @@ import java.net.URL;
  * And for the update check (update.c): fetching the latest release's
  * details, and opening its page in the browser. And on a device with a
  * second screen (the AYN Thor's lower one), a window there whose surface
- * and touches go to the native side (second_screen_android.c).
+ * and touches go to the native side (second_screen_android.c), shown and
+ * hidden as its settings say.
  */
 public class PokeParkActivity extends NativeActivity {
     private static final int PICK = 1;
@@ -96,20 +99,54 @@ public class PokeParkActivity extends NativeActivity {
 
     /** The second screen's surface, or null when it goes, and its size. */
     private static native void secondSurface(Surface surface, int width, int height);
-    /** A touch on it: 0 down, 1 up, 2 moved, at x, y in its pixels. */
-    private static native void secondTouch(int action, float x, float y);
+    /** A touch on it: 0 down, 1 up, 2 moved, of pointer id, at x, y in its
+     * pixels. */
+    private static native void secondTouch(int action, int id, float x, float y);
 
     private Presentation second;
+
+    /** Whether a display is built in (not HDMI, wireless or virtual):
+     * Display.getType, hidden, is TYPE_INTERNAL (1). Unknown is not. */
+    private static boolean builtIn(Display d) {
+        try {
+            return (Integer) Display.class.getMethod("getType").invoke(d) == 1;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** The second screen to show on: a built-in one apps can present on. */
+    private Display secondDisplay() {
+        DisplayManager dm = (DisplayManager) getSystemService(Context.DISPLAY_SERVICE);
+        for (Display d : dm.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION)) {
+            if (builtIn(d)) return d;
+        }
+        return null;
+    }
+
+    /** Whether this is a handheld with two screens, as the AYN Thor (from
+     * native code): a second built-in screen, a controller, and no phone
+     * in it. Not a PC, a handheld with one screen, or a phone. */
+    public boolean dualScreenHandheld() {
+        boolean pad = false;
+        if (getPackageManager().hasSystemFeature(PackageManager.FEATURE_TELEPHONY)) return false;
+        for (int id : InputDevice.getDeviceIds()) {
+            InputDevice d = InputDevice.getDevice(id);
+            if (d != null && (d.getSources() & InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD) pad = true;
+        }
+        boolean dual = pad && secondDisplay() != null;
+        Log.i("PokePark", "dual-screen handheld: " + dual + (pad ? "" : " (no controller)"));
+        return dual;
+    }
 
     /** Opens a window on a second screen, if there is one (from native
      * code, once its methods above are registered). */
     public void showSecondScreen() {
         runOnUiThread(() -> {
             if (second != null) return;
-            DisplayManager dm = (DisplayManager) getSystemService(Context.DISPLAY_SERVICE);
-            Display[] displays = dm.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION);
-            if (displays.length == 0) return;
-            second = new Presentation(this, displays[0]);
+            Display display = secondDisplay();
+            if (display == null) return;
+            second = new Presentation(this, display);
             SurfaceView view = new SurfaceView(second.getContext());
             view.getHolder().addCallback(new SurfaceHolder.Callback() {
                 public void surfaceCreated(SurfaceHolder h) {}
@@ -121,10 +158,15 @@ public class PokeParkActivity extends NativeActivity {
                 }
             });
             view.setOnTouchListener((v, e) -> {
-                int a = e.getActionMasked();
-                int kind = a == MotionEvent.ACTION_DOWN ? 0 : a == MotionEvent.ACTION_UP || a == MotionEvent.ACTION_CANCEL ? 1
-                         : a == MotionEvent.ACTION_MOVE ? 2 : -1;
-                if (kind >= 0) secondTouch(kind, e.getX(), e.getY());
+                int a = e.getActionMasked(), p = e.getActionIndex();
+                if (a == MotionEvent.ACTION_DOWN || a == MotionEvent.ACTION_POINTER_DOWN) {
+                    secondTouch(0, e.getPointerId(p), e.getX(p), e.getY(p));
+                } else if (a == MotionEvent.ACTION_UP || a == MotionEvent.ACTION_POINTER_UP) {
+                    secondTouch(1, e.getPointerId(p), e.getX(p), e.getY(p));
+                } else if (a == MotionEvent.ACTION_MOVE || a == MotionEvent.ACTION_CANCEL) {
+                    for (int i = 0; i < e.getPointerCount(); i++)
+                        secondTouch(a == MotionEvent.ACTION_MOVE ? 2 : 1, e.getPointerId(i), e.getX(i), e.getY(i));
+                }
                 return true;
             });
             second.setContentView(view);
@@ -134,6 +176,14 @@ public class PokeParkActivity extends NativeActivity {
                 Log.w("PokePark", "no second screen: " + e);
                 second = null;
             }
+        });
+    }
+
+    /** Closes the second screen's window, if open (from native code). */
+    public void hideSecondScreen() {
+        runOnUiThread(() -> {
+            if (second != null) second.dismiss();
+            second = null;
         });
     }
 

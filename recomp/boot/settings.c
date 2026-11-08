@@ -204,7 +204,11 @@ void settings_save(void) {
             FOV_MAX);
     fprintf(f, "aniso = %d ; anisotropic texture filtering: 1 (off), 2, 4, 8 or 16\n", g_settings.aniso);
 #ifdef __ANDROID__
-    fprintf(f, "minimap_top = %d ; with a second screen, the minimap on the game's screen too\n\n", g_settings.minimap_top);
+    fprintf(f, "\n[dual_screen] ; only on a handheld with two screens; elsewhere all off\n");
+    fprintf(f, "on = %d ; the second screen used, for the Pad's pages and the map\n", g_settings.dual_screen);
+    fprintf(f, "swap = %d ; the game on the second screen, the Pad's pages on the main one\n", g_settings.swap_screens);
+    fprintf(f, "minimap_top = %d ; the minimap on the game's screen too\n", g_settings.minimap_top);
+    fprintf(f, "friends_list = %d ; the friends list beside the map; 0: the map alone\n\n", g_settings.friends_list);
 #else
     fprintf(f, "renderer = %s ; opengl or vulkan, from the next start\n\n",
             g_settings.renderer == RENDERER_VULKAN ? "vulkan" : "opengl");
@@ -258,6 +262,8 @@ void settings_load(void) {
     g_settings.renderer = RENDERER_VULKAN; /* OpenGL draws if it can't start */
     g_settings.rumble = 2;
     g_settings.touch_controls = 1;
+    g_settings.dual_screen = 1;
+    g_settings.friends_list = 1;
     g_settings.text_speed = 1;
     g_settings.berries = 100;
     g_settings.prices = 100;
@@ -288,6 +294,12 @@ void settings_load(void) {
         *c = '\0';
         if (sscanf(p, "%31s", name) != 1) continue;
         p = c + 1;
+        if (!strcmp(section, "dual_screen")) {
+            if (!strcmp(name, "on")) g_settings.dual_screen = atoi(p) != 0;
+            if (!strcmp(name, "swap")) g_settings.swap_screens = atoi(p) != 0;
+            if (!strcmp(name, "minimap_top")) g_settings.minimap_top = atoi(p) != 0;
+            if (!strcmp(name, "friends_list")) g_settings.friends_list = atoi(p) != 0;
+        }
         if (!strcmp(section, "display")) {
             if (!strcmp(name, "fullscreen")) g_settings.fullscreen = atoi(p) != 0;
             if (!strcmp(name, "scale")) g_settings.scale = atoi(p) < 0 ? 0 : atoi(p) > MAX_SCALE ? MAX_SCALE : atoi(p);
@@ -295,7 +307,7 @@ void settings_load(void) {
             if (!strcmp(name, "aniso")) g_settings.aniso = valid_aniso(atoi(p));
             if (!strcmp(name, "renderer")) g_settings.renderer = strstr(p, "vulkan") ? RENDERER_VULKAN : RENDERER_OPENGL;
             if (!strcmp(name, "frame_rate")) g_settings.frame_rate = valid_frame_rate(atoi(p));
-            if (!strcmp(name, "minimap_top")) g_settings.minimap_top = atoi(p) != 0;
+            if (!strcmp(name, "minimap_top")) g_settings.minimap_top = atoi(p) != 0; /* (where it was) */
             if (!strcmp(name, "fov")) {
                 int v = atoi(p) / 5 * 5;
                 g_settings.fov = v < FOV_MIN ? FOV_MIN : v > FOV_MAX ? FOV_MAX : v;
@@ -400,6 +412,9 @@ void settings_step(int which, int d) {
     case SET_RENDERER: g_settings.renderer = !g_settings.renderer; break;
     case SET_TOUCH: g_settings.touch_controls = !g_settings.touch_controls; break;
     case SET_MINIMAP_TOP: g_settings.minimap_top = !g_settings.minimap_top; break;
+    case SET_DUAL_SCREEN: g_settings.dual_screen = !g_settings.dual_screen; break;
+    case SET_SWAP_SCREENS: g_settings.swap_screens = !g_settings.swap_screens; break;
+    case SET_FRIENDS_LIST: g_settings.friends_list = !g_settings.friends_list; break;
     case SET_RUMBLE:
         g_settings.rumble = (g_settings.rumble + d + 4) % 4;
         input_rumble_preview();
