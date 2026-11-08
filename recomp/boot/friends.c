@@ -303,7 +303,7 @@ const uint32_t* friends_draw(int w, int h, int* changed, int* map) {
     static uint32_t *px, *pages;
     static unsigned drawnChanges = ~0u, drawnMoves = ~0u;
     static int drawnW, drawnH;
-    int rows, pw, rowPx, i, first, last, count = 0;
+    int rows, pw, rowPx, i, first, last, count = 0, fresh = 0;
     float top, limit;
     char text[16];
     Rect list, mr;
@@ -389,8 +389,16 @@ const uint32_t* friends_draw(int w, int h, int* changed, int* map) {
     top = list.y0 - sScroll;
     first = (int)(sScroll / ROW_PITCH);
     last = (int)((sScroll + list.y1 - list.y0) / ROW_PITCH) + 1;
+    /* At most two rows drawn a frame: those past them, flung onto the
+     * page, the next frame. */
     for (i = first < 0 ? 0 : first; i <= last && i < rows; i++) {
-        const uint32_t* s = strip(i, rowPx);
+        int oldest;
+        const uint32_t* s;
+        if (strip_of(i, &oldest) < 0 && fresh++ >= 2) {
+            sMoves++;
+            continue;
+        }
+        s = strip(i, rowPx);
         if (s)
             lay(s, strip_width(), rowPx, (int)X(list.x0), (int)floorf(Y(top + i * ROW_PITCH)), (int)Y(list.y0),
                 (int)Y(list.y1));
