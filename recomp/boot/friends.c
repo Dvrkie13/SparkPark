@@ -72,7 +72,7 @@ static Rect part(Rect page, float x0, float y0, float x1, float y1) {
 }
 
 /* Where the rows scroll (the scroll bar at its right). */
-static Rect list_rect(void) { return part(left_page(), 0.09f, 0.15f, 0.91f, 0.93f); }
+static Rect list_rect(void) { return part(left_page(), 0.135f, 0.15f, 0.91f, 0.93f); }
 
 /* The map, at its shape, as large as fits in its part of the page with
  * the photo's border around it. */
