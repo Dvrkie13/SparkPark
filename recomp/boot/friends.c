@@ -409,15 +409,15 @@ const uint32_t* friends_draw(int w, int h, int* changed, int* map) {
                 (int)Y(list.y1));
     }
     /* The title, and how many are friends beside it: together in the
-     * middle of the page's label. */
+     * middle of the page's label (its tape, measured on the page). */
     if (all) {
-        Rect l = left_page();
-        float y = l.y0 + 0.085f * REF_H, title, number, x;
+        Rect tape = part(left_page(), 0.09f, 0.068f, 0.795f, 0.149f);
+        float y = (tape.y0 + tape.y1) / 2, title, number, x;
         for (i = 0; i < rows; i++) count += hle_friends_status(i) != 0;
         snprintf(text, sizeof(text), "%d/%d", count, rows);
         title = text_width("Friends", 54);
         number = number_width(text, 36);
-        x = (l.x0 + l.x1) / 2 - (title + 28 + number) / 2;
+        x = (tape.x0 + tape.x1) / 2 - (title + 28 + number) / 2;
         draw_text("Friends", x, y, 54, ALIGN_LEFT, BROWN, 0, 0, 1, 0);
         draw_number(text, x + title + 28 + number, y + 2, 36);
     }
