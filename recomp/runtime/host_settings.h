@@ -140,6 +140,8 @@ unsigned menu_generation(void);
  * (x, y, w, h) where the minimap goes on it.
  * Touches (0 down, 1 up, 2 moved, in its pixels) scroll the list. */
 const uint32_t* friends_draw(int w, int h, int* changed, int* map);
+/* Without the friends list: the pause menu's sky alone, behind the map. */
+const uint32_t* friends_sky(int w, int h, int* changed);
 void friends_touch(int action, float x, float y);
 #ifdef __ANDROID__
 /* A second screen (second_screen_android.c): whether this is a handheld

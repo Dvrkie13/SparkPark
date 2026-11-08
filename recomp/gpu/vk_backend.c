@@ -2734,11 +2734,16 @@ static void draw_bottom(void) {
     list = friends_draw(sBottomW, sBottomH, changed, in);
 #ifdef __ANDROID__
     {
-        /* With the setting off, the map alone; on again, all uploaded. */
+        /* With the setting off, the map alone on the pause menu's sky;
+         * switched, all uploaded. */
         static int was = 1;
-        if (!g_settings.friends_list) list = NULL;
-        if (list && !was) changed[0] = 1;
-        was = list != NULL;
+        int on = g_settings.friends_list;
+        if (!on) {
+            list = friends_sky(sBottomW, sBottomH, changed);
+            bottom_layout(sBottomW, sBottomH, in);
+        }
+        if (on != was) changed[0] = 1;
+        was = on;
     }
 #endif
     if (list) {

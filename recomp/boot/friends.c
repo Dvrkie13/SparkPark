@@ -36,7 +36,7 @@ int hle_friends_here(int* of);
 #define ROW_PITCH 104.0f
 #define ROW_HEIGHT 94.0f
 #define BAR 26.0f /* the scroll bar's width */
-#define BEHIND 0xFF0C0F17u /* past the pages */
+#define BEHIND 0xFF0C0F17u /* where the map goes */
 #define EDGE 0xFFA48D62u
 #define BROWN 0xFF8C2A10u /* the Pad's titles */
 #define PHOTO 0xFFFBF7EEu /* the photo's border */
@@ -58,6 +58,35 @@ static float sDragY, sDragScroll, sLastY;
 static unsigned sMoves; /* scrolling's changes */
 
 static float W(void) { return sW / sScale; }
+
+/* Past the pages, the pause menu's sky: its blue for the top quarter,
+ * then paler down to the bottom (as the game draws it on the TV). */
+static void sky(uint32_t* px, int w, int h) {
+    int x, y;
+    for (y = 0; y < h; y++) {
+        float t = (float)y / h, f = t < 0.26f ? 0 : (t - 0.26f) / 0.74f;
+        uint32_t c = 0xFF000000u | (uint32_t)(112 + 85 * f) << 16 | (uint32_t)(179 + 47 * f) << 8 | (uint32_t)(249 + 3 * f);
+        for (x = 0; x < w; x++) px[(size_t)y * w + x] = c;
+    }
+}
+
+/* The sky alone, for the map without the friends list: changed set as
+ * friends_draw's. */
+const uint32_t* friends_sky(int w, int h, int* changed) {
+    static uint32_t* px;
+    static int drawnW, drawnH;
+    *changed = 0;
+    if (w <= 0 || h <= 0) return NULL;
+    if (!px || w != drawnW || h != drawnH) {
+        free(px);
+        if (!(px = (uint32_t*)malloc((size_t)w * h * 4))) return NULL;
+        sky(px, w, h);
+        drawnW = w;
+        drawnH = h;
+        *changed = 1;
+    }
+    return px;
+}
 
 /* The pages: the left one over the right at the spine, as the Pad's. */
 static Rect left_page(void) {
@@ -323,7 +352,7 @@ static void draw_pages(int area, int zone) {
     static const Rect kWhole = {0, 0, 0, 0}, kLeaves = {1, 4, 63, 232};
     Rect l = left_page(), r = right_page(), m = map_rect();
     int k;
-    for (k = 0; k < sW * sH; k++) sPx[k] = BEHIND;
+    sky(sPx, sW, sH);
     picture("PmPocketbookR", "PmPocketbookRA", kWhole, r);
     picture("PmReaf01", "PmReaf01A", kLeaves, part(r, 0.79f, 0.05f, 0.96f, 0.56f));
     picture("PmPocketbookL01", "PmPocketbookL01A", kWhole, l);
