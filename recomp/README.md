@@ -132,7 +132,7 @@ default:
 | (none) | turn the camera | mouse | |
 | + / - | | P / M | Start / Back |
 | (none) | first person | Home / H | right stick click |
-| shake | Iron Tail | Q / Left Shift (hold) | LB (hold) |
+| shake | Iron Tail (in battles) | Q, Left Shift or E | LB or RB |
 | shake, in minigames | (Bulbasaur's dash and the like) | Q and E by turns | LB and RB by turns |
 
 In first person (`hle_camera.c`, the game's own camera, entered on the

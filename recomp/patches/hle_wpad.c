@@ -139,6 +139,17 @@ static uint16_t wpad_buttons(uint32_t held) {
     return b;
 }
 
+/* Whether the remote is being shaken: while either shake key is held, and
+ * for a few swings after one is pressed, so a tap is a whole shake. */
+#define TAP_REPORTS (4 * SWING_REPORTS)
+static int shaking(uint32_t held) {
+    static uint32_t last, until;
+    uint32_t keys = held & (HOST_PAD_SHAKE | HOST_PAD_SHAKE2);
+    if (keys & ~last) until = sReports + TAP_REPORTS;
+    last = keys;
+    return keys || (int32_t)(until - sReports) > 0;
+}
+
 /* Reports go to the sampling callback, like the Bluetooth stack's receive
  * interrupt on a Wii. */
 static void report(ppc_t* c) {
@@ -234,10 +245,11 @@ void f_802488A0(ppc_t* c) {
         ax = acc[0];
         ay = acc[1];
         az = acc[2];
-    } else if (held & (HOST_PAD_SHAKE | HOST_PAD_SHAKE2)) {
-        /* Swing along the remote's length, which is left-right on screen
-         * held sideways: +-2.5 g, about 17 times a second. */
-        ay = (sReports / SWING_REPORTS) & 1 ? ACC_ONE_G * 5 / 2 : -ACC_ONE_G * 5 / 2;
+    } else if (on && chan == 0 && shaking(held)) {
+        /* Iron Tail: a shake up and down, out of the remote's face (KPAD's
+         * y, which is what the park's scripts read; along its length they
+         * saw nothing), +-2.5 g about 17 times a second. */
+        az += (sReports / SWING_REPORTS) & 1 ? ACC_ONE_G * 5 / 2 : -ACC_ONE_G * 5 / 2;
     }
     memset(MA(st), 0, 0x2A);
     ST16(st + 0x00, wpad_buttons(held));
