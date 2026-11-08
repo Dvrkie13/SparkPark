@@ -2,13 +2,14 @@
  * Friend List, from the game's own data and pictures.
  *
  * FriendNoteData (at 0x803A2228, set up as the park loads) lists the
- * Pokémon in the Pad's order, Pikachu first: 16 bytes each, the
- * character at +0. A character's internal name is in a table of char*
+ * Pokémon, Pikachu first: 16 bytes each, the character at +0 and its
+ * number in the Pad in the low 15 bits of +6. A character's internal name is in a table of char*
  * (0x80317850); its icon is the texture "Ic" + that name + "01" (64x64),
  * and its English name the message 10000 + character in the resident
  * messages (a BMG whose MID1 has ids 0x01000000 | n). Whether the player
  * has befriended one, or made it a best friend, the game answers
- * (fn_8017E120, fn_8017E3A0, on its friends' record), asked from the
+ * (fn_8017E120, fn_8017E3A0, on the story's friends record: +0x18 of
+ * FriendNoteSingleModeSaveDataOne is is_best_friend), asked from the
  * minimap's drawing (hle_gx.c), which is on the game's thread in the park.
  *
  * The icons, the list's own pictures (Pause.brres: the blue tags, the
@@ -24,6 +25,7 @@
 #define CHAR_NAMES 0x80317850u
 #define MAX_ROWS 256
 #define TEX0 0x54455830u
+#define SINGLE_MODE_GET 0x801273C0u /* FriendNoteSingleModeSaveData::virt0x8 */
 #define NAME_ID(chr) (0x01000000u | (10000u + (chr)))
 
 uint32_t* hle_pause_decode(uint32_t tex, int* w, int* h); /* hle_pause.c */
@@ -143,11 +145,24 @@ static void set_up(void) {
         for (i = 0; i < MAX_ROWS; i++) drop(&sRows[i].icon);
         sTable = table;
         sCount = n - 1 > MAX_ROWS ? MAX_ROWS : (int)n - 1;
+        /* In the Pad's order, by number; in the table's if the numbers
+         * aren't each row's once. */
+        for (i = 0; i < (uint32_t)sCount; i++) sRows[i].chr = ~0u;
         for (i = 0; i < (uint32_t)sCount; i++) {
-            uint32_t chr = LD32(table + 16 * (i + 1)), at = LD32(CHAR_NAMES + 4 * chr);
+            uint32_t number = LD16(table + 16 * (i + 1) + 6) & 0x7FFF;
+            if (number < 1 || number > (uint32_t)sCount || sRows[number - 1].chr != ~0u) break;
+            sRows[number - 1].chr = LD32(table + 16 * (i + 1));
+        }
+        for (i = 0; i < (uint32_t)sCount; i++) {
+            uint32_t chr = sRows[i].chr, at;
             char name[32] = "";
+            if (chr == ~0u) { /* (the numbers were no good) */
+                for (i = 0; i < (uint32_t)sCount; i++) sRows[i].chr = LD32(table + 16 * (i + 1));
+                i = 0;
+                chr = sRows[0].chr;
+            }
+            at = LD32(CHAR_NAMES + 4 * chr);
             if (chr < 1000 && phys_ok(at)) read_name(at, name, sizeof(name));
-            sRows[i].chr = chr;
             sRows[i].name[0] = 0;
             sRows[i].status = 0;
             strcpy(sRows[i].icon.name, "Ic");
@@ -222,6 +237,11 @@ const uint32_t* hle_friends_picture(const char* name, int* w, int* h) {
     return merged;
 }
 
+static int is_story(uint32_t record) {
+    uint32_t list = LD32(record + 4);
+    return phys_ok(list) && phys_ok(LD32(list)) && LD32(LD32(list) + 8) == SINGLE_MODE_GET;
+}
+
 /* Asks the game who are friends: from the minimap's drawing, a few times
  * a second while the list is drawn. */
 void hle_friends_update(ppc_t* c) {
@@ -231,7 +251,11 @@ void hle_friends_update(ppc_t* c) {
     if (!sCount || !sWanted || ppc_timebase() - sWanted > PPC_TB_HZ || frames++ % 15) return;
     f_8002E840(c);
     g = c->r[3];
-    record = g + (LD32(g + 0x5F28) ? 0x1D4 : 0x1180);
+    /* The story's record (the attraction mode's has no best friends):
+     * the one whose list is a FriendNoteSingleModeSaveData. */
+    record = g + 0x1D4;
+    if (!is_story(record)) record = g + 0x1180;
+    if (!is_story(record)) return;
     for (i = 0; i < sCount; i++) {
         int status = 0;
         c->r[3] = record;
