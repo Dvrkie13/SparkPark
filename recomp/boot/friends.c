@@ -110,15 +110,21 @@ static void picture(const char* name, const char* alpha, Rect src, Rect dst) {
     draw_image(img, w, h, src, dst, 0xFFFFFF, 0);
 }
 
+/* How wide a number is in the game's digits. */
+static float number_width(const char* s, float height) {
+    float k = height / (DIGIT_Y1 - DIGIT_Y0), width = 0;
+    for (; *s; s++) {
+        int d = *s == '/' ? 0 : *s - '0' + 1;
+        width += (kDigitX[d][1] - kDigitX[d][0] + 1) * k;
+    }
+    return width;
+}
+
 /* A number in the game's digits, its right end at x, its middle at y. */
 static float draw_number(const char* s, float x, float y, float height) {
     int w, h, n = (int)strlen(s), i;
     const uint32_t* img = hle_friends_picture("PmFriendListNumMat", &w, &h);
-    float k = height / (DIGIT_Y1 - DIGIT_Y0), width = 0;
-    for (i = 0; i < n; i++) {
-        int d = s[i] == '/' ? 0 : s[i] - '0' + 1;
-        width += (kDigitX[d][1] - kDigitX[d][0] + 1) * k;
-    }
+    float k = height / (DIGIT_Y1 - DIGIT_Y0), width = number_width(s, height);
     x -= width;
     for (i = 0; i < n && img; i++) {
         int d = s[i] == '/' ? 0 : s[i] - '0' + 1;
@@ -263,8 +269,7 @@ static void draw_pages(void) {
     picture("PmPocketbookR", "PmPocketbookRA", kWhole, r);
     picture("PmReaf01", "PmReaf01A", kLeaves, part(r, 0.79f, 0.05f, 0.96f, 0.56f));
     picture("PmPocketbookL01", "PmPocketbookL01A", kWhole, l);
-    draw_text("Friends", (l.x0 + l.x1) / 2, l.y0 + 0.08f * REF_H, 54, ALIGN_CENTRE, BROWN, 0, 0, 1, 0);
-    draw_text("Map", (m.x0 + m.x1) / 2, r.y0 + 0.08f * REF_H, 54, ALIGN_CENTRE, BROWN, 0, 0, 1, 0);
+    draw_text("Map", (m.x0 + m.x1) / 2, r.y0 + 0.085f * REF_H, 54, ALIGN_CENTRE, BROWN, 0, 0, 1, 0);
     /* The photo: its shadow, its border, and dark where the map goes. */
     {
         Rect shadow = {m.x0 - PHOTO_EDGE + 6, m.y0 - PHOTO_EDGE + 8, m.x1 + PHOTO_EDGE + 6, m.y1 + PHOTO_EDGE + 8};
@@ -403,11 +408,18 @@ const uint32_t* friends_draw(int w, int h, int* changed, int* map) {
             lay(s, strip_width(), rowPx, (int)X(list.x0), (int)floorf(Y(top + i * ROW_PITCH)), (int)Y(list.y0),
                 (int)Y(list.y1));
     }
-    /* How many are friends, under the title. */
+    /* The title, and how many are friends beside it: together in the
+     * middle of the page's label. */
     if (all) {
+        Rect l = left_page();
+        float y = l.y0 + 0.085f * REF_H, title, number, x;
         for (i = 0; i < rows; i++) count += hle_friends_status(i) != 0;
         snprintf(text, sizeof(text), "%d/%d", count, rows);
-        draw_number(text, list.x1, list.y0 - 30, 34);
+        title = text_width("Friends", 54);
+        number = number_width(text, 36);
+        x = (l.x0 + l.x1) / 2 - (title + 28 + number) / 2;
+        draw_text("Friends", x, y, 54, ALIGN_LEFT, BROWN, 0, 0, 1, 0);
+        draw_number(text, x + title + 28 + number, y + 2, 36);
     }
     /* The scroll bar. */
     if (limit > 0) {
