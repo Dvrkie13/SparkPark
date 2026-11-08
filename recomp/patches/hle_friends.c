@@ -195,6 +195,14 @@ int hle_friends_rows(void) {
 
 unsigned hle_friends_changes(void) { return sChanges; }
 
+/* A message of the resident ones, as Latin-1; "" if there's none. */
+const char* hle_friends_message(uint32_t id, char* out, int size) {
+    uint32_t s = sBmg && LD32(sBmg) == 0x4D455347u ? message(sBmg, id) : 0;
+    out[0] = 0;
+    if (s) message_text(s, out, size);
+    return out;
+}
+
 const char* hle_friends_name(int i) { return i >= 0 && i < sCount ? sRows[i].name : ""; }
 
 int hle_friends_status(int i) { return i >= 0 && i < sCount ? sRows[i].status : 0; }

@@ -2,9 +2,9 @@
  * on its left page the friends list, every Pokémon in the Pad's order,
  * with its number, icon and name, and the pink book of a friend or the
  * rainbow one of a best friend (one not yet befriended is "???", as the
- * Pad shows it); on its right page the minimap, as a photo stuck in: the
- * frame drawn here, the map in it by vk_backend.c, where friends_draw
- * says. All in the game's pictures and font
+ * Pad shows it); on its right page the minimap, as a photo stuck in, with
+ * the zone's name written under it: the frame drawn here, the map in it
+ * by vk_backend.c, where friends_draw says. All in the game's pictures and font
  * (hle_friends.c, hle_pause.c), each Pokémon on a slip of its paper;
  * the list scrolls by dragging it.
  *
@@ -25,6 +25,8 @@ const uint32_t* hle_friends_icon(int i, int* w, int* h);
 const uint32_t* hle_friends_picture(const char* name, int* w, int* h);
 const uint32_t* hle_pause_image(const char* name, const char* alpha, int* w, int* h); /* hle_pause.c */
 double second_map_aspect(void); /* vk_backend.c */
+int gx_minimap_place(int* zone);   /* gx_fifo.c */
+const char* hle_friends_message(uint32_t id, char* out, int size);
 
 /* In picture units: the screen is 1080 high, W() wide. */
 #define REF_H 1080.0f
@@ -36,6 +38,7 @@ double second_map_aspect(void); /* vk_backend.c */
 #define BROWN 0xFF8C2A10u /* the Pad's titles */
 #define PHOTO 0xFFFBF7EEu /* the photo's border */
 #define PHOTO_EDGE 16.0f
+#define CAPTION 72.0f /* the photo's bottom border, written on */
 
 /* The digits, "/0123456789" (PmFriendListNumMat). */
 static const float kDigitX[11][2] = {{8, 18},    {19, 39},   {46, 54},   {63, 81},   {84, 101}, {105, 125},
@@ -78,11 +81,12 @@ static Rect list_rect(void) { return part(left_page(), 0.135f, 0.15f, 0.91f, 0.9
  * the photo's border around it. */
 static Rect map_rect(void) {
     Rect in = part(right_page(), 0.11f, 0.15f, 0.77f, 0.92f), r;
-    float aspect = (float)second_map_aspect(), w = in.x1 - in.x0 - 2 * PHOTO_EDGE, h = in.y1 - in.y0 - 2 * PHOTO_EDGE;
+    float aspect = (float)second_map_aspect(), w = in.x1 - in.x0 - 2 * PHOTO_EDGE;
+    float h = in.y1 - in.y0 - PHOTO_EDGE - CAPTION;
     if (w > h * aspect) w = h * aspect;
     else h = w / aspect;
     r.x0 = (in.x0 + in.x1 - w) / 2;
-    r.y0 = (in.y0 + in.y1 - h) / 2;
+    r.y0 = (in.y0 + in.y1 - h - CAPTION + PHOTO_EDGE) / 2;
     r.x1 = r.x0 + w;
     r.y1 = r.y0 + h;
     return r;
@@ -254,8 +258,22 @@ static void lay(const uint32_t* s, int sw, int sh, int x, int y, int y0, int y1)
     }
 }
 
-/* The pages and their titles: what doesn't change. */
-static void draw_pages(void) {
+/* The name of the place the minimap is of, as the game's Drifblim names
+ * it ("Meadow Zone"): areas 3, 4 and 6 hold two zones each (Beach and
+ * Iceberg, Cavern and Lava, Granite and Flower); "" if it has none. */
+static const char* place_name(int area, int zone, char* out, int size) {
+    static const int kFirst[8] = {-1, 0, 1, 2, 4, 7, 8, -1}; /* by area, the first of the names */
+    int k;
+    out[0] = 0;
+    if (area < 1 || area > 7 || kFirst[area] < 0) return out;
+    k = kFirst[area] + (area == 3 || area == 4 || area == 6 ? (zone == 2) : 0);
+    return hle_friends_message(0x02013880u + 10u * (uint32_t)k, out, size);
+}
+
+/* The pages and their titles: what doesn't change while the zone
+ * doesn't. */
+static void draw_pages(int area, int zone) {
+    char name[48];
     static const Rect kWhole = {0, 0, 0, 0}, kLeaves = {1, 4, 63, 232};
     Rect l = left_page(), r = right_page(), m = map_rect();
     int k;
@@ -266,12 +284,14 @@ static void draw_pages(void) {
     draw_text("Map", (m.x0 + m.x1) / 2, r.y0 + 0.085f * REF_H, 54, ALIGN_CENTRE, BROWN, 0, 0, 1, 0);
     /* The photo: its shadow, its border, and dark where the map goes. */
     {
-        Rect shadow = {m.x0 - PHOTO_EDGE + 6, m.y0 - PHOTO_EDGE + 8, m.x1 + PHOTO_EDGE + 6, m.y1 + PHOTO_EDGE + 8};
-        Rect border = {m.x0 - PHOTO_EDGE, m.y0 - PHOTO_EDGE, m.x1 + PHOTO_EDGE, m.y1 + PHOTO_EDGE};
+        Rect shadow = {m.x0 - PHOTO_EDGE + 6, m.y0 - PHOTO_EDGE + 8, m.x1 + PHOTO_EDGE + 6, m.y1 + CAPTION + 8};
+        Rect border = {m.x0 - PHOTO_EDGE, m.y0 - PHOTO_EDGE, m.x1 + PHOTO_EDGE, m.y1 + CAPTION};
         draw_box(shadow, 6, 0x50000000u | (EDGE & 0xFFFFFF));
         draw_box(border, 4, PHOTO);
         draw_box(m, 1, BEHIND);
     }
+    if (place_name(area, zone, name, sizeof(name))[0])
+        draw_text(name, (m.x0 + m.x1) / 2, m.y1 + CAPTION / 2 + 2, 46, ALIGN_CENTRE, BROWN, 0, 0, 1, m.x1 - m.x0);
 }
 
 void friends_touch(int action, float x, float y) {
@@ -298,10 +318,10 @@ void friends_touch(int action, float x, float y) {
 }
 
 const uint32_t* friends_draw(int w, int h, int* changed, int* map) {
-    int all = 0;
+    int all = 0, area, zone;
     static uint32_t *px, *pages;
     static unsigned drawnChanges = ~0u, drawnMoves = ~0u;
-    static int drawnW, drawnH;
+    static int drawnW, drawnH, drawnArea = -1, drawnZone;
     int rows, pw, rowPx, i, first, last, count = 0, fresh = 0;
     float top, limit;
     char text[16];
@@ -333,7 +353,8 @@ const uint32_t* friends_draw(int w, int h, int* changed, int* map) {
         sVelocity = 0;
     }
     rowPx = (int)ceilf(ROW_PITCH * sScale);
-    if (px && w == drawnW && h == drawnH && drawnChanges == hle_friends_changes() && drawnMoves == sMoves) {
+    area = gx_minimap_place(&zone);
+    if (px && area == drawnArea && zone == drawnZone && w == drawnW && h == drawnH && drawnChanges == hle_friends_changes() && drawnMoves == sMoves) {
         /* Nothing changed: a row near those shown drawn ahead. */
         int oldest, middle = (int)(sScroll / ROW_PITCH) + 4, d;
         sPx = px;
@@ -357,9 +378,14 @@ const uint32_t* friends_draw(int w, int h, int* changed, int* map) {
             px = pages = NULL;
             return NULL;
         }
-        sPx = pages;
-        draw_pages();
         forget_strips();
+        drawnArea = -1;
+    }
+    if (area != drawnArea || zone != drawnZone || drawnChanges != hle_friends_changes()) { /* (names found late) */
+        sPx = pages;
+        draw_pages(area, zone);
+        drawnArea = area;
+        drawnZone = zone;
         all = 1;
     }
     if (drawnChanges != hle_friends_changes()) {

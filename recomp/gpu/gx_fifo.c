@@ -1075,6 +1075,14 @@ static int phys_ok(uint32_t a, uint32_t n) {
 
 /* Whether texture map 0's image is a minimap's map: a texture named
  * Fdm<area>, its TEX0 header just before it. */
+static int sMapArea, sMapZone; /* from the map's name: FdmAr02Zn01 */
+
+/* Where the minimap last drawn was of: area (0 if none yet) and zone. */
+int gx_minimap_place(int* zone) {
+    *zone = sMapZone;
+    return sMapArea;
+}
+
 static int texture_is_map(void) {
     static uint32_t last = ~0u;
     static int was;
@@ -1084,7 +1092,12 @@ static int texture_is_map(void) {
     was = 0;
     if (!phys_ok(h, 0x40) || memcmp(g_mem + h, "TEX0", 4) != 0) return 0;
     name = h + rd32(g_mem + h + 0x14);
-    was = phys_ok(name, 4) && memcmp(g_mem + name, "Fdm", 3) == 0;
+    was = phys_ok(name, 12) && memcmp(g_mem + name, "Fdm", 3) == 0;
+    if (was && memcmp(g_mem + name + 3, "Ar", 2) == 0 && memcmp(g_mem + name + 7, "Zn", 2) == 0) {
+        const uint8_t* n = g_mem + name;
+        sMapArea = (n[5] - '0') * 10 + (n[6] - '0');
+        sMapZone = (n[9] - '0') * 10 + (n[10] - '0');
+    }
     return was;
 }
 
