@@ -1,14 +1,17 @@
-/* The friends list on a second screen (the AYN Thor's lower one), beside
- * the minimap: every Pokémon in the PokéPark Pad's order, with its
- * number, icon and name, and the pink book of a friend or the rainbow
- * one of a best friend; one not yet befriended is "???", as the Pad shows
- * it. It is drawn with the game's pictures and font (hle_friends.c), on
- * the Pad's cream page, each Pokémon on one of its blue tags, and
- * scrolled by dragging it.
+/* A second screen (the AYN Thor's lower one) as the PokéPark Pad, open:
+ * on its left page the friends list, every Pokémon in the Pad's order,
+ * with its number, icon and name, and the pink book of a friend or the
+ * rainbow one of a best friend (one not yet befriended is "???", as the
+ * Pad shows it); on its right page the minimap, as a photo stuck in: the
+ * frame drawn here, the map in it by vk_backend.c, where friends_draw
+ * says. All in the game's pictures and font
+ * (hle_friends.c, hle_pause.c), each Pokémon on one of the Pad's blue
+ * tags; the list scrolls by dragging it.
  *
- * Each row is drawn once into a strip of its own, kept for the rows last
- * shown, so scrolling only copies them; while nothing changes, the rows
- * just above and below are drawn ahead, one a frame. */
+ * The pages are drawn once. Each row is drawn once into a strip of its
+ * own, kept for the rows last shown, so scrolling only lays them over the
+ * pages again; while nothing changes, the rows just above and below are
+ * drawn ahead, one a frame. */
 #include <stdio.h>
 
 #include "canvas.h"
@@ -20,17 +23,20 @@ const char* hle_friends_name(int i);
 int hle_friends_status(int i);
 const uint32_t* hle_friends_icon(int i, int* w, int* h);
 const uint32_t* hle_friends_picture(const char* name, int* w, int* h);
+const uint32_t* hle_pause_image(const char* name, const char* alpha, int* w, int* h); /* hle_pause.c */
+double second_map_aspect(void); /* vk_backend.c */
 
-/* In picture units: the list's height is 1080. */
+/* In picture units: the screen is 1080 high, W() wide. */
 #define REF_H 1080.0f
-#define MARGIN 22.0f
-#define HEADER 112.0f /* the title and count, above the rows */
-#define ROW_PITCH 112.0f
-#define ROW_HEIGHT 100.0f
-#define PAGE 0xFFEEDEBDu  /* the Pad's page */
-#define EDGE 0xFFA48D62u  /* and its shadow */
-#define INK 0xFF5A3A1Au
+#define ROW_PITCH 104.0f
+#define ROW_HEIGHT 94.0f
+#define BAR 26.0f /* the scroll bar's width */
+#define BEHIND 0xFF0C0F17u /* past the pages */
+#define EDGE 0xFFA48D62u
+#define BROWN 0xFF8C2A10u /* the Pad's titles */
 #define NAVY 0xFF1E3C78u
+#define PHOTO 0xFFFBF7EEu /* the photo's border */
+#define PHOTO_EDGE 16.0f
 
 /* The blue tag (PmFriendsMat): one of its bands, its ends kept and its
  * middle stretched. */
@@ -44,20 +50,64 @@ static const float kDigitX[11][2] = {{8, 18},    {19, 39},   {46, 54},   {63, 81
 static const Rect kThumb = {3, 3, 36, 66};
 
 static float sScroll, sVelocity; /* picture units */
+static float sRowWidth;           /* the page's, while a row's strip is drawn */
 static int sDragging;
 static float sDragY, sDragScroll, sLastY;
 static unsigned sMoves; /* scrolling's changes */
 
-static float list_width(void) { return sW / sScale; }
+static float W(void) { return sW / sScale; }
+
+/* The pages: the left one over the right at the spine, as the Pad's. */
+static Rect left_page(void) {
+    Rect r = {0, 0, W() * 0.53f, REF_H};
+    return r;
+}
+
+static Rect right_page(void) {
+    Rect r = {W() * 0.47f, 0, W(), REF_H};
+    return r;
+}
+
+/* A part of a page, in fractions of it. */
+static Rect part(Rect page, float x0, float y0, float x1, float y1) {
+    Rect r = {page.x0 + (page.x1 - page.x0) * x0, page.y0 + (page.y1 - page.y0) * y0,
+              page.x0 + (page.x1 - page.x0) * x1, page.y0 + (page.y1 - page.y0) * y1};
+    return r;
+}
+
+/* Where the rows scroll (the scroll bar at its right). */
+static Rect list_rect(void) { return part(left_page(), 0.09f, 0.15f, 0.91f, 0.93f); }
+
+/* The map, at its shape, as large as fits in its part of the page with
+ * the photo's border around it. */
+static Rect map_rect(void) {
+    Rect in = part(right_page(), 0.11f, 0.15f, 0.77f, 0.92f), r;
+    float aspect = (float)second_map_aspect(), w = in.x1 - in.x0 - 2 * PHOTO_EDGE, h = in.y1 - in.y0 - 2 * PHOTO_EDGE;
+    if (w > h * aspect) w = h * aspect;
+    else h = w / aspect;
+    r.x0 = (in.x0 + in.x1 - w) / 2;
+    r.y0 = (in.y0 + in.y1 - h) / 2;
+    r.x1 = r.x0 + w;
+    r.y1 = r.y0 + h;
+    return r;
+}
+
+static float row_width(void) { return sRowWidth; }
 
 static float max_scroll(int rows) {
-    float m = rows * ROW_PITCH + MARGIN - (REF_H - HEADER);
+    float m = rows * ROW_PITCH - (list_rect().y1 - list_rect().y0);
     return m > 0 ? m : 0;
 }
 
-static void fill(uint32_t c) {
-    int k;
-    for (k = 0; k < sW * sH; k++) sPx[k] = c;
+static void picture(const char* name, const char* alpha, Rect src, Rect dst) {
+    int w, h;
+    const uint32_t* img = hle_pause_image(name, alpha, &w, &h);
+    if (src.x1 <= 0) {
+        src.x0 = src.y0 = 0;
+        src.x1 = (float)w;
+        src.y1 = (float)h;
+    }
+    draw_image(img, w, h, src, dst, 0xFFFFFF, 0);
 }
 
 /* A number in the game's digits, its right end at x, its middle at y. */
@@ -81,12 +131,12 @@ static float draw_number(const char* s, float x, float y, float height) {
     return width;
 }
 
-/* Row i at y (its top). */
+/* Row i at y (its top), from x 0 to row_width(). */
 static void draw_row(int i, float y) {
     int w, h, status = hle_friends_status(i);
     const uint32_t* tag = hle_friends_picture("PmFriendsMat", &w, &h);
     const uint32_t* icon;
-    float x0 = MARGIN, x1 = list_width() - MARGIN - 34, k = ROW_HEIGHT / (kTagLeft.y1 - kTagLeft.y0);
+    float x0 = 0, x1 = row_width(), k = ROW_HEIGHT / (kTagLeft.y1 - kTagLeft.y0);
     float lx = x0 + (kTagLeft.x1 - kTagLeft.x0) * k, rx = x1 - (kTagRight.x1 - kTagRight.x0) * k, cy = y + ROW_HEIGHT / 2;
     char number[8];
     if (tag) {
@@ -99,26 +149,26 @@ static void draw_row(int i, float y) {
         draw_box(b, 12, 0xFF62A5EEu);
     }
     snprintf(number, sizeof(number), "%03d", i + 1);
-    draw_number(number, x0 + 112, cy, 34);
+    draw_number(number, x0 + 100, cy, 30);
     icon = status ? hle_friends_icon(i, &w, &h) : NULL;
     if (!icon) icon = hle_friends_picture("IcQuestion01", &w, &h);
     if (icon) {
-        Rect src = {0, 0, (float)w, (float)h}, dst = {x0 + 124, cy - 44, x0 + 212, cy + 44};
+        Rect src = {0, 0, (float)w, (float)h}, dst = {x0 + 110, cy - 38, x0 + 186, cy + 38};
         draw_image(icon, w, h, src, dst, 0xFFFFFF, 0);
     }
-    draw_text(status && hle_friends_name(i)[0] ? hle_friends_name(i) : "???", x0 + 228, cy, 46, ALIGN_LEFT, 0xFFFFFFFFu,
-              NAVY, 3.5f, 0, rx - 80 - (x0 + 228));
+    draw_text(status && hle_friends_name(i)[0] ? hle_friends_name(i) : "???", x0 + 198, cy, 40, ALIGN_LEFT, 0xFFFFFFFFu,
+              NAVY, 3.0f, 0, rx - 64 - (x0 + 198));
     if (status) {
         const uint32_t* book = hle_friends_picture("FriendIcon", &w, &h);
         if (book) {
             Rect src = {status == 2 ? w / 2.0f : 0, 0, status == 2 ? (float)w : w / 2.0f, (float)h};
-            Rect dst = {rx - 76, cy - 34, rx - 8, cy + 34};
+            Rect dst = {rx - 62, cy - 28, rx - 6, cy + 28};
             draw_image(book, w, h, src, dst, 0xFFFFFF, 0);
         }
     }
 }
 
-/* Rows drawn, each a strip as wide as the list. */
+/* Rows drawn, each a strip as wide as a row, clear around its tag. */
 #define STRIPS 40
 #define AHEAD 16 /* rows drawn ahead, each way from the middle (fewer than STRIPS in all) */
 static struct {
@@ -128,12 +178,14 @@ static struct {
 } sStrips[STRIPS];
 static unsigned sStripUse[STRIPS], sUses;
 
+static int strip_width(void) { return (int)ceilf(row_width() * sScale); }
+
 /* Row i's strip, if drawn; else -1, and the one to draw it in. */
 static int strip_of(int i, int* oldest) {
     int k, status = hle_friends_status(i);
     *oldest = 0;
     for (k = 0; k < STRIPS; k++) {
-        if (sStrips[k].px && sStrips[k].row == i && sStrips[k].status == status && sStrips[k].w == sW &&
+        if (sStrips[k].px && sStrips[k].row == i && sStrips[k].status == status && sStrips[k].w == strip_width() &&
             sStrips[k].scale == sScale)
             return k;
         if (sStripUse[k] < sStripUse[*oldest]) *oldest = k;
@@ -142,30 +194,31 @@ static int strip_of(int i, int* oldest) {
 }
 
 static const uint32_t* strip(int i, int rowPx) {
-    int k, oldest, status = hle_friends_status(i);
+    int k, oldest, status = hle_friends_status(i), w = strip_width(), savedW = sW, savedH = sH;
     uint32_t* saved = sPx;
-    int savedH = sH;
-    float savedY = sOffY;
+    float savedX = sOffX, savedY = sOffY;
     if ((k = strip_of(i, &oldest)) >= 0) {
         sStripUse[k] = ++sUses;
         return sStrips[k].px;
     }
     k = oldest;
     free(sStrips[k].px);
-    sStrips[k].px = (uint32_t*)malloc((size_t)sW * rowPx * 4);
+    sStrips[k].px = (uint32_t*)calloc((size_t)w * rowPx, 4);
     if (!sStrips[k].px) return NULL;
     sStrips[k].row = i;
     sStrips[k].status = status;
-    sStrips[k].w = sW;
+    sStrips[k].w = w;
     sStrips[k].scale = sScale;
     sStripUse[k] = ++sUses;
     sPx = sStrips[k].px;
+    sW = w;
     sH = rowPx;
-    sOffY = 0;
-    fill(PAGE);
+    sOffX = sOffY = 0;
     draw_row(i, (rowPx / sScale - ROW_HEIGHT) / 2);
     sPx = saved;
+    sW = savedW;
     sH = savedH;
+    sOffX = savedX;
     sOffY = savedY;
     return sStrips[k].px;
 }
@@ -178,11 +231,57 @@ static void forget_strips(void) {
     }
 }
 
+/* Lays strip s (sw x sh) over the image at pixel (x, y), only on its rows
+ * from y0 to y1. */
+static void lay(const uint32_t* s, int sw, int sh, int x, int y, int y0, int y1) {
+    int a, b;
+    for (b = 0; b < sh; b++) {
+        int py = y + b;
+        uint32_t* d;
+        if (py < y0 || py >= y1 || py < 0 || py >= sH) continue;
+        d = sPx + (size_t)py * sW;
+        for (a = 0; a < sw; a++) {
+            uint32_t c = s[(size_t)b * sw + a], al = c >> 24, o = 0xFF000000u;
+            int px = x + a, k;
+            if (!al || px < 0 || px >= sW) continue;
+            if (al == 255) {
+                d[px] = c;
+                continue;
+            }
+            for (k = 0; k < 24; k += 8) o |= (((c >> k & 255) * al + (d[px] >> k & 255) * (255 - al)) / 255) << k;
+            d[px] = o;
+        }
+    }
+}
+
+/* The pages and their titles: what doesn't change. */
+static void draw_pages(void) {
+    static const Rect kWhole = {0, 0, 0, 0}, kLeaves = {1, 4, 63, 232};
+    Rect l = left_page(), r = right_page(), m = map_rect();
+    int k;
+    for (k = 0; k < sW * sH; k++) sPx[k] = BEHIND;
+    picture("PmPocketbookR", "PmPocketbookRA", kWhole, r);
+    picture("PmReaf01", "PmReaf01A", kLeaves, part(r, 0.79f, 0.05f, 0.96f, 0.56f));
+    picture("PmPocketbookL01", "PmPocketbookL01A", kWhole, l);
+    draw_text("Friends", (l.x0 + l.x1) / 2, l.y0 + 0.08f * REF_H, 54, ALIGN_CENTRE, BROWN, 0, 0, 1, 0);
+    draw_text("Map", (m.x0 + m.x1) / 2, r.y0 + 0.08f * REF_H, 54, ALIGN_CENTRE, BROWN, 0, 0, 1, 0);
+    /* The photo: its shadow, its border, and dark where the map goes. */
+    {
+        Rect shadow = {m.x0 - PHOTO_EDGE + 6, m.y0 - PHOTO_EDGE + 8, m.x1 + PHOTO_EDGE + 6, m.y1 + PHOTO_EDGE + 8};
+        Rect border = {m.x0 - PHOTO_EDGE, m.y0 - PHOTO_EDGE, m.x1 + PHOTO_EDGE, m.y1 + PHOTO_EDGE};
+        draw_box(shadow, 6, 0x50000000u | (EDGE & 0xFFFFFF));
+        draw_box(border, 4, PHOTO);
+        draw_box(m, 1, BEHIND);
+    }
+}
+
 void friends_touch(int action, float x, float y) {
-    (void)x;
     if (sScale <= 0) return;
+    x /= sScale;
     y /= sScale;
     if (action == 0) {
+        Rect l = left_page();
+        if (x < l.x0 || x >= l.x1) return; /* only on the list's page */
         sDragging = 1;
         sDragY = sLastY = y;
         sDragScroll = sScroll;
@@ -199,16 +298,30 @@ void friends_touch(int action, float x, float y) {
     }
 }
 
-const uint32_t* friends_draw(int w, int h, int* changed) {
-    static uint32_t* px;
+const uint32_t* friends_draw(int w, int h, int* changed, int* map) {
+    int all = 0;
+    static uint32_t *px, *pages;
     static unsigned drawnChanges = ~0u, drawnMoves = ~0u;
     static int drawnW, drawnH;
-    int rows, cellW, rowPx, i, first, last, count = 0;
+    int rows, pw, rowPx, i, first, last, count = 0;
     float top, limit;
     char text[16];
+    Rect list, mr;
     *changed = 0;
-    if (w <= 0 || h <= 0 || !hle_font_metrics(&cellW, &sCellH, &sBaseline) || !(rows = hle_friends_rows())) return NULL;
-    sCellW = cellW;
+    if (w <= 0 || h <= 0 || !hle_font_metrics(&sCellW, &sCellH, &sBaseline) || !(rows = hle_friends_rows()) ||
+        !hle_pause_image("PmPocketbookL01", NULL, &pw, &pw))
+        return NULL;
+    sW = w;
+    sH = h;
+    sScale = h / REF_H;
+    sOffX = sOffY = 0;
+    mr = map_rect();
+    map[0] = (int)X(mr.x0);
+    map[1] = (int)Y(mr.y0);
+    map[2] = (int)(X(mr.x1) - X(mr.x0));
+    map[3] = (int)(Y(mr.y1) - Y(mr.y0));
+    list = list_rect();
+    sRowWidth = list.x1 - list.x0 - BAR - 8;
     /* Thrown, it slows. */
     if (!sDragging && (sVelocity > 0.5f || sVelocity < -0.5f)) {
         sScroll += sVelocity;
@@ -220,13 +333,15 @@ const uint32_t* friends_draw(int w, int h, int* changed) {
         sScroll = sScroll < 0 ? 0 : limit;
         sVelocity = 0;
     }
+    rowPx = (int)ceilf(ROW_PITCH * sScale);
     if (px && w == drawnW && h == drawnH && drawnChanges == hle_friends_changes() && drawnMoves == sMoves) {
         /* Nothing changed: a row near those shown drawn ahead. */
         int oldest, middle = (int)(sScroll / ROW_PITCH) + 4, d;
+        sPx = px;
         for (d = 0; d <= 2 * AHEAD; d++) {
-            int i = middle + (d % 2 ? -(d + 1) / 2 : d / 2);
+            i = middle + (d % 2 ? -(d + 1) / 2 : d / 2);
             if (i >= 0 && i < rows && strip_of(i, &oldest) < 0) {
-                strip(i, (int)ceilf(ROW_PITCH * sScale));
+                strip(i, rowPx);
                 break;
             }
         }
@@ -234,54 +349,69 @@ const uint32_t* friends_draw(int w, int h, int* changed) {
     }
     if (w != drawnW || h != drawnH || !px) {
         free(px);
+        free(pages);
         px = (uint32_t*)malloc((size_t)w * h * 4);
-        if (!px) return NULL;
+        pages = (uint32_t*)malloc((size_t)w * h * 4);
+        if (!px || !pages) {
+            free(px);
+            free(pages);
+            px = pages = NULL;
+            return NULL;
+        }
+        sPx = pages;
+        draw_pages();
         forget_strips();
+        all = 1;
     }
-    if (drawnChanges != hle_friends_changes()) forget_strips();
+    if (drawnChanges != hle_friends_changes()) {
+        forget_strips();
+        all = 1;
+    }
     drawnW = w;
     drawnH = h;
     drawnChanges = hle_friends_changes();
     drawnMoves = sMoves;
-    *changed = 1;
+    /* Only scrolled: only the list's part changed. */
+    *changed = all ? 1 : 2;
+    changed[1] = (int)X(list.x0);
+    changed[2] = (int)Y(list.y0);
+    changed[3] = (int)ceilf(X(list.x1)) - changed[1];
+    changed[4] = (int)ceilf(Y(list.y1)) - changed[2];
     sPx = px;
-    sW = w;
-    sH = h;
-    sScale = h / REF_H;
-    sOffX = sOffY = 0;
-    fill(PAGE);
-    /* The rows, below the title. */
-    rowPx = (int)ceilf(ROW_PITCH * sScale);
-    top = HEADER - sScroll;
+    if (all) {
+        memcpy(px, pages, (size_t)w * h * 4);
+    } else {
+        int y;
+        for (y = changed[2]; y < changed[2] + changed[4] && y < h; y++)
+            memcpy(px + (size_t)y * w + changed[1], pages + (size_t)y * w + changed[1], (size_t)changed[3] * 4);
+    }
+    /* The rows, in the list's part of the page. */
+    top = list.y0 - sScroll;
     first = (int)(sScroll / ROW_PITCH);
-    last = (int)((sScroll + REF_H - HEADER) / ROW_PITCH) + 1;
+    last = (int)((sScroll + list.y1 - list.y0) / ROW_PITCH) + 1;
     for (i = first < 0 ? 0 : first; i <= last && i < rows; i++) {
         const uint32_t* s = strip(i, rowPx);
-        int y0 = (int)floorf(Y(top + i * ROW_PITCH)), y;
-        if (!s) continue;
-        for (y = 0; y < rowPx; y++) {
-            if (y0 + y >= (int)Y(HEADER) && y0 + y < h) memcpy(px + (size_t)(y0 + y) * w, s + (size_t)y * w, (size_t)w * 4);
-        }
+        if (s)
+            lay(s, strip_width(), rowPx, (int)X(list.x0), (int)floorf(Y(top + i * ROW_PITCH)), (int)Y(list.y0),
+                (int)Y(list.y1));
     }
-    /* The title: "Friends", and how many of them. */
-    {
-        Rect line = {MARGIN, HEADER - 12, list_width() - MARGIN, HEADER - 6};
-        draw_box(line, 3, EDGE);
+    /* How many are friends, under the title. */
+    if (all) {
+        for (i = 0; i < rows; i++) count += hle_friends_status(i) != 0;
+        snprintf(text, sizeof(text), "%d/%d", count, rows);
+        draw_number(text, list.x1, list.y0 - 30, 34);
     }
-    for (i = 0; i < rows; i++) count += hle_friends_status(i) != 0;
-    draw_text("Friends", MARGIN + 8, (HEADER - 12) / 2, 58, ALIGN_LEFT, INK, 0, 0, 1, 0);
-    snprintf(text, sizeof(text), "%d/%d", count, rows);
-    draw_number(text, list_width() - MARGIN - 40, (HEADER - 12) / 2, 44);
     /* The scroll bar. */
     if (limit > 0) {
         int tw, th;
         const uint32_t* img = hle_friends_picture("PmFriendsMat", &tw, &th);
-        float x1 = list_width() - 8, x0 = x1 - 22, y0 = HEADER, y1 = REF_H - MARGIN;
-        float size = (y1 - y0) * (REF_H - HEADER) / (rows * ROW_PITCH + MARGIN);
-        float at = y0 + (y1 - y0 - (size < 60 ? 60 : size)) * sScroll / limit;
+        float x1 = list.x1, x0 = x1 - BAR, y0 = list.y0, y1 = list.y1;
+        float size = (y1 - y0) * (y1 - y0) / (rows * ROW_PITCH);
+        float at;
         Rect track = {x0 + 7, y0, x1 - 7, y1};
-        draw_box(track, 4, 0x40000000u | (EDGE & 0xFFFFFF));
         if (size < 60) size = 60;
+        at = y0 + (y1 - y0 - size) * sScroll / limit;
+        draw_box(track, 4, 0x40000000u | (EDGE & 0xFFFFFF));
         if (img) {
             float cap = (x1 - x0) * 12 / (kThumb.x1 - kThumb.x0);
             Rect t = {kThumb.x0, kThumb.y0, kThumb.x1, kThumb.y0 + 12}, m = {kThumb.x0, kThumb.y0 + 12, kThumb.x1, kThumb.y1 - 12};

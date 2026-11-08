@@ -1999,6 +1999,29 @@ static void upload(VkCommandBuffer cb, Tex* t, int width, int height, int levels
     transition(cb, &t->im, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 }
 
+/* Copies part r (x, y, w, h) of a w-wide image of 4-byte pixels into the
+ * same part of t's image. */
+static void upload_part(VkCommandBuffer cb, Tex* t, int w, const int* r, const uint32_t* pixels) {
+    VkBufferImageCopy region;
+    VkDeviceSize off, bytes = (VkDeviceSize)r[2] * r[3] * 4;
+    VkBuffer src;
+    uint32_t* dst = (uint32_t*)staging(bytes, &src, &off);
+    int y;
+    for (y = 0; y < r[3]; y++) memcpy(dst + (size_t)y * r[2], pixels + (size_t)(r[1] + y) * w + r[0], (size_t)r[2] * 4);
+    memset(&region, 0, sizeof(region));
+    region.bufferOffset = off;
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.layerCount = 1;
+    region.imageOffset.x = r[0];
+    region.imageOffset.y = r[1];
+    region.imageExtent.width = (uint32_t)r[2];
+    region.imageExtent.height = (uint32_t)r[3];
+    region.imageExtent.depth = 1;
+    transition(cb, &t->im, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    vkCmdCopyBufferToImage(cb, src, t->im.img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+    transition(cb, &t->im, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+}
+
 static unsigned vk_texture_pixels(void) {
     return (1u << GX_PIX_I8) | (1u << GX_PIX_IA8) | (sBc ? 1u << GX_PIX_BC1 : 0u);
 }
@@ -2577,21 +2600,32 @@ static void map_keep(VkPipeline p, const uint32_t* pc, const GXDrawState* st, Vk
     d->dfunc = (int)kDepthFunc[st->z_func & 7];
 }
 
-/* Where the minimap goes in sBottom (x, y, w, h): in its first half (the
- * left, or the top), as large as fits with a margin, at its shape on the
- * game's screen. */
-static void bottom_layout(int w, int h, int* r) {
+/* The minimap at its shape on the game's screen, as large as fits in
+ * rectangle in (x, y, w, h) at k of its size, centred: r. */
+static void fit_map(const int* in, double k, int* r) {
     double aspect = (kMapRect[2] - kMapRect[0]) * sPixelAspect / (kMapRect[3] - kMapRect[1]);
-    double bw = w >= h ? w / 2.0 : w, bh = w >= h ? h : h / 2.0;
-    double mh = bh * 0.92, mw = mh * aspect;
-    if (mw > bw * 0.92) {
-        mw = bw * 0.92;
+    double mh = in[3] * k, mw = mh * aspect;
+    if (mw > in[2] * k) {
+        mw = in[2] * k;
         mh = mw / aspect;
     }
-    r[0] = (int)((bw - mw) / 2);
-    r[1] = (int)((bh - mh) / 2);
+    r[0] = in[0] + (int)((in[2] - mw) / 2);
+    r[1] = in[1] + (int)((in[3] - mh) / 2);
     r[2] = (int)mw;
     r[3] = (int)mh;
+}
+
+/* The minimap's shape (width over height), for friends.c to make room. */
+double second_map_aspect(void) { return (kMapRect[2] - kMapRect[0]) * sPixelAspect / (kMapRect[3] - kMapRect[1]); }
+
+/* Where the minimap goes in sBottom (x, y, w, h) with no friends list:
+ * in its first half (the left, or the top). */
+static void bottom_layout(int w, int h, int* r) {
+    int in[4];
+    in[0] = in[1] = 0;
+    in[2] = w >= h ? w / 2 : w;
+    in[3] = w >= h ? h : h / 2;
+    fit_map(in, 0.92, r);
 }
 
 static void map_images(int w, int h) {
@@ -2669,37 +2703,24 @@ static void draw_map(void) {
     transition(S->cb, &sMap, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 }
 
-/* Where the friends list goes in sBottom (x, y, w, h): its other half. */
-static void list_layout(int w, int h, int* r) {
-    r[0] = w >= h ? w / 2 : 0;
-    r[1] = w >= h ? 0 : h / 2;
-    r[2] = w - r[0];
-    r[3] = h - r[1];
-}
-
 #ifdef __ANDROID__
 int second_touch_next(int* action, float* x, float* y); /* second_screen_android.c */
 
-/* The second screen's touches, to the friends list: those that start on it. */
-static void list_touches(const int* r) {
-    static int on;
+/* The second screen's touches, to the friends list. */
+static void list_touches(void) {
     int action;
     float x, y;
-    while (second_touch_next(&action, &x, &y)) {
-        if (action == 0) on = x >= r[0] && x < r[0] + r[2] && y >= r[1] && y < r[1] + r[3];
-        if (on) friends_touch(action, x - r[0], y - r[1]);
-        if (action == 1) on = 0;
-    }
+    while (second_touch_next(&action, &x, &y)) friends_touch(action, x, y);
 }
 #else
-static void list_touches(const int* r) { (void)r; }
+static void list_touches(void) {}
 #endif
 
 /* The second screen's picture, into sBottom, for this frame. */
 static void draw_bottom(void) {
     VkRenderingAttachmentInfo ca = {VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
     VkRenderingInfo ri = {VK_STRUCTURE_TYPE_RENDERING_INFO};
-    int r[4], lr[4], changed;
+    int r[4], in[4], changed[5];
     const uint32_t* list;
     Quad q;
     if (sBottom.w != sBottomW || sBottom.h != sBottomH) {
@@ -2707,26 +2728,33 @@ static void draw_bottom(void) {
         sBottom = make_image(sBottomW, sBottomH, 1, VK_FORMAT_R8G8B8A8_UNORM,
                              VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_SAMPLE_COUNT_1_BIT);
     }
-    bottom_layout(sBottomW, sBottomH, r);
-    if (sMapCount && r[2] > 0 && r[3] > 0) {
-        map_images(r[2], r[3]);
-        draw_map();
-    }
-    /* The friends list, uploaded only when it changed. */
-    list_layout(sBottomW, sBottomH, lr);
-    list_touches(lr);
-    list = friends_draw(lr[2], lr[3], &changed);
+    /* The Pad's pages with the friends list (friends.c), uploaded only when
+     * they changed, and the map on them where they say. */
+    list_touches();
+    list = friends_draw(sBottomW, sBottomH, changed, in);
     if (list) {
         Tex* t = &sTex[TEX_LIST];
-        if (t->im.w != lr[2] || t->im.h != lr[3]) {
+        if (t->im.w != sBottomW || t->im.h != sBottomH) {
             drop_image(&t->im);
-            t->im = make_image(lr[2], lr[3], 1, VK_FORMAT_B8G8R8A8_UNORM,
+            t->im = make_image(sBottomW, sBottomH, 1, VK_FORMAT_B8G8R8A8_UNORM,
                                VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_SAMPLE_COUNT_1_BIT);
             t->sampler = sLinearClamp;
             set_texture(TEX_LIST);
-            changed = 1;
+            changed[0] = 1;
         }
-        if (changed) upload(S->cb, t, lr[2], lr[3], 1, (const uint8_t*)list);
+        if (changed[0] == 1) {
+            upload(S->cb, t, sBottomW, sBottomH, 1, (const uint8_t*)list);
+        } else if (changed[0] == 2 && changed[1] >= 0 && changed[2] >= 0 && changed[3] > 0 && changed[4] > 0 &&
+                   changed[1] + changed[3] <= sBottomW && changed[2] + changed[4] <= sBottomH) {
+            upload_part(S->cb, t, sBottomW, changed + 1, list);
+        }
+        memcpy(r, in, sizeof(r));
+    } else {
+        bottom_layout(sBottomW, sBottomH, r);
+    }
+    if (sMapCount && r[2] > 0 && r[3] > 0) {
+        map_images(r[2], r[3]);
+        draw_map();
     }
     transition(S->cb, &sBottom, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     ca.imageView = sBottom.view;
@@ -2740,26 +2768,21 @@ static void draw_bottom(void) {
     ri.colorAttachmentCount = 1;
     ri.pColorAttachments = &ca;
     vkCmdBeginRendering(S->cb, &ri);
+    set_scissor(0, 0, sBottomW, sBottomH);
+    set_cull(VK_CULL_MODE_NONE);
+    set_depth(0, 0, VK_COMPARE_OP_ALWAYS);
+    memset(&q, 0, sizeof(q));
+    q.src[2] = q.src[3] = 1;
+    if (list) {
+        use_pipeline(pipeline(PK_BLIT, 0));
+        set_viewport(0, 0, (float)sBottomW, (float)sBottomH, 0, 1);
+        q.tex = TEX_LIST;
+        quad(&q);
+    }
     if (sMapCount && r[2] > 0 && r[3] > 0) {
         use_pipeline(pipeline(PK_BLIT, 0));
         set_viewport((float)r[0], (float)r[1], (float)r[2], (float)r[3], 0, 1);
-        set_scissor(0, 0, sBottomW, sBottomH);
-        set_cull(VK_CULL_MODE_NONE);
-        set_depth(0, 0, VK_COMPARE_OP_ALWAYS);
-        memset(&q, 0, sizeof(q));
-        q.src[2] = q.src[3] = 1;
         q.tex = TEX_MAP;
-        quad(&q);
-    }
-    if (list) {
-        use_pipeline(pipeline(PK_BLIT, 1));
-        set_viewport((float)lr[0], (float)lr[1], (float)lr[2], (float)lr[3], 0, 1);
-        set_scissor(0, 0, sBottomW, sBottomH);
-        set_cull(VK_CULL_MODE_NONE);
-        set_depth(0, 0, VK_COMPARE_OP_ALWAYS);
-        memset(&q, 0, sizeof(q));
-        q.src[2] = q.src[3] = 1;
-        q.tex = TEX_LIST;
         quad(&q);
     }
     vkCmdEndRendering(S->cb);

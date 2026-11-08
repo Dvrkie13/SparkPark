@@ -128,8 +128,10 @@ const uint32_t* menu_draw(int w, int h);
 /* Android: changes whenever menu_draw's image may have, so a device can
  * leave an unchanged one where it is (input_android.c). */
 unsigned menu_generation(void);
-/* A second screen's friends list (friends.c), w x h, beside the minimap:
- * NULL if there is none yet; *changed if it isn't the image last given.
- * Touches (0 down, 1 up, 2 moved, in its pixels) scroll it. */
-const uint32_t* friends_draw(int w, int h, int* changed);
+/* A second screen (friends.c) as the PokéPark Pad's pages, w x h, with the
+ * friends list: NULL if there is none yet; changed[0] 1 if it isn't the
+ * image last given, 2 if only its part changed[1..4] (x, y, w, h) is; map
+ * (x, y, w, h) where the minimap goes on it.
+ * Touches (0 down, 1 up, 2 moved, in its pixels) scroll the list. */
+const uint32_t* friends_draw(int w, int h, int* changed, int* map);
 void friends_touch(int action, float x, float y);
