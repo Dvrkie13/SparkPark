@@ -5,8 +5,8 @@
  * Pad shows it); on its right page the minimap, as a photo stuck in: the
  * frame drawn here, the map in it by vk_backend.c, where friends_draw
  * says. All in the game's pictures and font
- * (hle_friends.c, hle_pause.c), each Pokémon on one of the Pad's blue
- * tags; the list scrolls by dragging it.
+ * (hle_friends.c, hle_pause.c), each Pokémon on a slip of its paper;
+ * the list scrolls by dragging it.
  *
  * The pages are drawn once. Each row is drawn once into a strip of its
  * own, kept for the rows last shown, so scrolling only lays them over the
@@ -34,13 +34,9 @@ double second_map_aspect(void); /* vk_backend.c */
 #define BEHIND 0xFF0C0F17u /* past the pages */
 #define EDGE 0xFFA48D62u
 #define BROWN 0xFF8C2A10u /* the Pad's titles */
-#define NAVY 0xFF1E3C78u
 #define PHOTO 0xFFFBF7EEu /* the photo's border */
 #define PHOTO_EDGE 16.0f
 
-/* The blue tag (PmFriendsMat): one of its bands, its ends kept and its
- * middle stretched. */
-static const Rect kTagLeft = {45, 40, 64, 74}, kTagMiddle = {64, 40, 232, 74}, kTagRight = {232, 40, 252, 74};
 /* The digits, "/0123456789" (PmFriendListNumMat). */
 static const float kDigitX[11][2] = {{8, 18},    {19, 39},   {46, 54},   {63, 81},   {84, 101}, {105, 125},
                                      {127, 145}, {148, 167}, {171, 190}, {193, 213}, {217, 236}};
@@ -137,38 +133,36 @@ static float draw_number(const char* s, float x, float y, float height) {
     return width;
 }
 
-/* Row i at y (its top), from x 0 to row_width(). */
+/* Row i at y (its top), from x 0 to row_width(): a slip of the Pad's
+ * paper with a shadow, its number, its icon as a photo, its name, and the
+ * book of a friend. */
 static void draw_row(int i, float y) {
+    static const Rect kPaper = {80, 150, 300, 330}; /* a plain part of the right page */
     int w, h, status = hle_friends_status(i);
-    const uint32_t* tag = hle_friends_picture("PmFriendsMat", &w, &h);
+    const uint32_t* paper = hle_pause_image("PmPocketbookR", NULL, &w, &h);
     const uint32_t* icon;
-    float x0 = 0, x1 = row_width(), k = ROW_HEIGHT / (kTagLeft.y1 - kTagLeft.y0);
-    float lx = x0 + (kTagLeft.x1 - kTagLeft.x0) * k, rx = x1 - (kTagRight.x1 - kTagRight.x0) * k, cy = y + ROW_HEIGHT / 2;
+    float x1 = row_width() - 6, y1 = y + ROW_HEIGHT - 6, cy = (y + y1) / 2;
+    Rect slip = {0, y, x1, y1}, shadow = {4, y + 5, x1 + 5, y1 + 6};
     char number[8];
-    if (tag) {
-        Rect l = {x0, y, lx, y + ROW_HEIGHT}, m = {lx, y, rx, y + ROW_HEIGHT}, r = {rx, y, x1, y + ROW_HEIGHT};
-        draw_image(tag, w, h, kTagLeft, l, 0xFFFFFF, 0);
-        draw_image(tag, w, h, kTagMiddle, m, 0xFFFFFF, 0);
-        draw_image(tag, w, h, kTagRight, r, 0xFFFFFF, 0);
-    } else {
-        Rect b = {x0, y, x1, y + ROW_HEIGHT};
-        draw_box(b, 12, 0xFF62A5EEu);
-    }
+    draw_box(shadow, 4, 0x48000000u | (EDGE & 0xFFFFFF));
+    if (paper && w > kPaper.x1 && h > kPaper.y1) draw_image(paper, w, h, kPaper, slip, 0xFFFFFF, 0);
+    else draw_box(slip, 3, PHOTO);
     snprintf(number, sizeof(number), "%03d", i + 1);
-    draw_number(number, x0 + 100, cy, 30);
+    draw_number(number, 88, cy, 28);
     icon = status ? hle_friends_icon(i, &w, &h) : NULL;
     if (!icon) icon = hle_friends_picture("IcQuestion01", &w, &h);
     if (icon) {
-        Rect src = {0, 0, (float)w, (float)h}, dst = {x0 + 110, cy - 38, x0 + 186, cy + 38};
+        Rect src = {0, 0, (float)w, (float)h}, frame = {100, cy - 37, 174, cy + 37}, dst = {104, cy - 33, 170, cy + 33};
+        draw_box(frame, 2, 0xFFFFFFFFu);
         draw_image(icon, w, h, src, dst, 0xFFFFFF, 0);
     }
-    draw_text(status && hle_friends_name(i)[0] ? hle_friends_name(i) : "???", x0 + 198, cy, 40, ALIGN_LEFT, 0xFFFFFFFFu,
-              NAVY, 3.0f, 0, rx - 64 - (x0 + 198));
+    draw_text(status && hle_friends_name(i)[0] ? hle_friends_name(i) : "???", 188, cy + 2, 40, ALIGN_LEFT, BROWN, 0, 0,
+              1, x1 - 70 - 188);
     if (status) {
         const uint32_t* book = hle_friends_picture("FriendIcon", &w, &h);
         if (book) {
             Rect src = {status == 2 ? w / 2.0f : 0, 0, status == 2 ? (float)w : w / 2.0f, (float)h};
-            Rect dst = {rx - 62, cy - 28, rx - 6, cy + 28};
+            Rect dst = {x1 - 62, cy - 28, x1 - 6, cy + 28};
             draw_image(book, w, h, src, dst, 0xFFFFFF, 0);
         }
     }
