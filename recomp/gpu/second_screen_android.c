@@ -4,8 +4,9 @@
  * (vk_backend.c), taking the window at its next frame after it changes.
  *
  * Only on a handheld with two screens (dualScreenHandheld: a second
- * built-in screen, a controller, no phone), and only while the Dual screen
- * setting is on: the game's thread opens and closes the window as it says
+ * screen, built in or a touch screen plugged in as Retroid's Dual Screen
+ * Add-On, a controller, no phone), and only while the Dual screen setting
+ * is on: the game's thread opens and closes the window as it says
  * (second_screen_apply). With the screens swapped the game is drawn there,
  * so its touches go to the touch controls (input_android.c) and the main
  * screen's to the friends list.
@@ -27,7 +28,8 @@ void win_size(int* w, int* h);                                   /* window_andro
 
 static JavaVM* sVm;
 static jobject sActivity;
-static int sDevice; /* a handheld with two screens */
+static volatile int sDevice; /* a handheld with two screens */
+static volatile int sAgain;  /* a screen was plugged in or out */
 static int sShown = -1;
 static int sW, sH;  /* the window's size */
 
@@ -107,6 +109,13 @@ static void JNICALL second_touch(JNIEnv* env, jclass cls, jint action, jint id, 
     else second_touch_push(action, id, x, y);
 }
 
+static void JNICALL second_device(JNIEnv* env, jclass cls, jboolean dual) {
+    (void)env;
+    (void)cls;
+    sDevice = dual;
+    sAgain = 1;
+}
+
 static void call(JNIEnv* env, const char* method) {
     jclass cls = (*env)->GetObjectClass(env, sActivity);
     (*env)->CallVoidMethod(env, sActivity, (*env)->GetMethodID(env, cls, method, "()V"));
@@ -123,12 +132,13 @@ void second_screen_start(JavaVM* vm, jobject activity) {
     static const JNINativeMethod kMethods[] = {
         {"secondSurface", "(Landroid/view/Surface;II)V", (void*)second_surface},
         {"secondTouch", "(IIFF)V", (void*)second_touch},
+        {"secondDevice", "(Z)V", (void*)second_device},
     };
     JNIEnv* env;
     jclass cls;
     if ((*vm)->AttachCurrentThread(vm, &env, NULL) != JNI_OK) return;
     cls = (*env)->GetObjectClass(env, activity);
-    if ((*env)->RegisterNatives(env, cls, kMethods, 2) == 0) {
+    if ((*env)->RegisterNatives(env, cls, kMethods, 3) == 0) {
         sDevice = (*env)->CallBooleanMethod(env, activity, (*env)->GetMethodID(env, cls, "dualScreenHandheld", "()Z"));
         sActivity = (*env)->NewGlobalRef(env, activity);
         sVm = vm;
@@ -146,6 +156,11 @@ void second_screen_start(JavaVM* vm, jobject activity) {
 void second_screen_apply(void) {
     JNIEnv* env;
     int want = second_screen_used();
+    /* Plugged in or out: its window opened again, or its going noted. */
+    if (sAgain) {
+        sAgain = 0;
+        sShown = -1;
+    }
     if (want == sShown || !sVm) return;
     if ((*sVm)->AttachCurrentThread(sVm, &env, NULL) != JNI_OK) return;
     sShown = want;

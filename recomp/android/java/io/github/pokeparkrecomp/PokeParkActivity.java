@@ -9,6 +9,8 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.hardware.display.DisplayManager;
 import android.net.Uri;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.ParcelFileDescriptor;
 import android.util.Log;
 import android.view.Display;
@@ -31,9 +33,10 @@ import java.net.URL;
  * open file descriptor (disc_image_android.c reads the game from it).
  * And for the update check (update.c): fetching the latest release's
  * details, and opening its page in the browser. And on a device with a
- * second screen (the AYN Thor's lower one), a window there whose surface
- * and touches go to the native side (second_screen_android.c), shown and
- * hidden as its settings say.
+ * second screen (the AYN Thor's lower one, or a touch screen plugged in, as
+ * Retroid's Dual Screen Add-On), a window there whose surface and touches
+ * go to the native side (second_screen_android.c), shown and hidden as its
+ * settings say.
  */
 public class PokeParkActivity extends NativeActivity {
     private static final int PICK = 1;
@@ -102,8 +105,12 @@ public class PokeParkActivity extends NativeActivity {
     /** A touch on it: 0 down, 1 up, 2 moved, of pointer id, at x, y in its
      * pixels. */
     private static native void secondTouch(int action, int id, float x, float y);
+    /** Whether this is a handheld with two screens, again: one was plugged
+     * in or out. */
+    private static native void secondDevice(boolean dual);
 
     private Presentation second;
+    private DisplayManager.DisplayListener displays;
 
     /** Whether a display is built in (not HDMI, wireless or virtual):
      * Display.getType, hidden, is TYPE_INTERNAL (1). Unknown is not. */
@@ -115,19 +122,46 @@ public class PokeParkActivity extends NativeActivity {
         }
     }
 
-    /** The second screen to show on: a built-in one apps can present on. */
+    /** Whether a display is a touch screen plugged in, as Retroid's Dual
+     * Screen Add-On (over USB-C, so to Android an external display, as a TV
+     * or a monitor would be): it has a touch screen of its own, one Android
+     * gives it (InputDevice.getAssociatedDisplayId, hidden), or else one
+     * plugged in too. A TV or a monitor without one isn't. */
+    private static boolean touchScreenPluggedIn(Display d) {
+        try {
+            if ((Integer) Display.class.getMethod("getType").invoke(d) != 2) return false; /* TYPE_EXTERNAL */
+        } catch (Exception e) {
+            return false;
+        }
+        for (int id : InputDevice.getDeviceIds()) {
+            InputDevice in = InputDevice.getDevice(id);
+            if (in == null || (in.getSources() & InputDevice.SOURCE_TOUCHSCREEN) != InputDevice.SOURCE_TOUCHSCREEN) continue;
+            int on = -1;
+            try {
+                on = (Integer) InputDevice.class.getMethod("getAssociatedDisplayId").invoke(in);
+            } catch (Exception e) {
+                /* not asked: taken as unknown */
+            }
+            if (on == d.getDisplayId() || (on == -1 && in.isExternal())) return true;
+        }
+        return false;
+    }
+
+    /** The second screen to show on, of those apps can present on: a
+     * built-in one, or else a touch screen plugged in. */
     private Display secondDisplay() {
         DisplayManager dm = (DisplayManager) getSystemService(Context.DISPLAY_SERVICE);
-        for (Display d : dm.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION)) {
+        Display[] all = dm.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION);
+        for (Display d : all) {
             if (builtIn(d)) return d;
+        }
+        for (Display d : all) {
+            if (touchScreenPluggedIn(d)) return d;
         }
         return null;
     }
 
-    /** Whether this is a handheld with two screens, as the AYN Thor (from
-     * native code): a second built-in screen, a controller, and no phone
-     * in it. Not a PC, a handheld with one screen, or a phone. */
-    public boolean dualScreenHandheld() {
+    private boolean dual() {
         boolean pad = false;
         if (getPackageManager().hasSystemFeature(PackageManager.FEATURE_TELEPHONY)) return false;
         for (int id : InputDevice.getDeviceIds()) {
@@ -137,6 +171,31 @@ public class PokeParkActivity extends NativeActivity {
         boolean dual = pad && secondDisplay() != null;
         Log.i("PokePark", "dual-screen handheld: " + dual + (pad ? "" : " (no controller)"));
         return dual;
+    }
+
+    /** Whether this is a handheld with two screens, as the AYN Thor, or one
+     * with Retroid's Dual Screen Add-On on (from native code): a second
+     * screen, built in or a touch screen plugged in, a controller, and no
+     * phone in it. Not a PC, a handheld with one screen, or a phone. Asked
+     * again whenever a screen is plugged in or out. */
+    public boolean dualScreenHandheld() {
+        runOnUiThread(() -> {
+            if (displays != null) return;
+            displays = new DisplayManager.DisplayListener() {
+                public void onDisplayAdded(int id) {
+                    secondDevice(dual());
+                }
+                public void onDisplayRemoved(int id) {
+                    /* Its window went with it. */
+                    if (second != null && second.getDisplay().getDisplayId() == id) second = null;
+                    secondDevice(dual());
+                }
+                public void onDisplayChanged(int id) {}
+            };
+            ((DisplayManager) getSystemService(Context.DISPLAY_SERVICE))
+                .registerDisplayListener(displays, new Handler(Looper.getMainLooper()));
+        });
+        return dual();
     }
 
     /** Opens a window on a second screen, if there is one (from native
@@ -189,6 +248,7 @@ public class PokeParkActivity extends NativeActivity {
 
     @Override
     protected void onDestroy() {
+        if (displays != null) ((DisplayManager) getSystemService(Context.DISPLAY_SERVICE)).unregisterDisplayListener(displays);
         if (second != null) second.dismiss();
         second = null;
         super.onDestroy();
