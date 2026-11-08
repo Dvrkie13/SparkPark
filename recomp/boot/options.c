@@ -72,6 +72,8 @@ static const Row kDisplay[] = {
     {ROW_SETTING, SET_FOV, "Field of view"},       {ROW_SETTING, SET_ANISO, "Filtering"},
 #ifndef __ANDROID__
     {ROW_SETTING, SET_RENDERER, "Renderer"},
+#else
+    {ROW_SETTING, SET_MINIMAP_TOP, "Top screen map"},
 #endif
     {ROW_SETTING, SET_UPDATES, "Updates"},
     {ROW_CLOSE, 0, "Close game"},
@@ -152,6 +154,7 @@ static void setting_text(int which, char* out, size_t n) {
     case SET_SENSITIVITY: snprintf(out, n, "%.1f", g_settings.mouse_sensitivity); break;
     case SET_INVERT: snprintf(out, n, g_settings.invert_tilt ? "On" : "Off"); break;
     case SET_TOUCH: snprintf(out, n, g_settings.touch_controls ? "On" : "Off"); break;
+    case SET_MINIMAP_TOP: snprintf(out, n, g_settings.minimap_top ? "On" : "Off"); break;
     case SET_ANISO: snprintf(out, n, g_settings.aniso == 1 ? "Original" : "%dx", g_settings.aniso); break;
     case SET_RENDERER:
         snprintf(out, n, "%s%s", g_settings.renderer == RENDERER_VULKAN ? "Vulkan" : "OpenGL",

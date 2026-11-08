@@ -38,6 +38,7 @@ typedef struct {
     int renderer;            /* RENDERER_*: what draws, from the next start */
     int rumble;              /* controller rumble: 0 off, 1 light, 2 normal, 3 strong */
     int touch_controls;      /* Android: the touch screen's controls, shown while it was used last; 0 never */
+    int minimap_top;         /* Android, with a second screen: the minimap there and on the game's screen too */
     int text_speed;          /* dialogue: 1 (the game's), 2, 3, or 0 (a page at once) */
     int berries;             /* berries collected, percent of the game's */
     int prices;              /* berries spent, percent of the game's */
@@ -73,7 +74,7 @@ void prompts_init(void);
 /* What settings_step changes. */
 enum { SET_FULLSCREEN, SET_SCALE, SET_MSAA, SET_FRAME_RATE, SET_FOV, SET_SENSITIVITY, SET_INVERT, SET_ANISO,
        SET_RUMBLE, SET_TEXT_SPEED, SET_BERRIES, SET_PRICES,
-       SET_DAMAGE_DEALT, SET_DAMAGE_TAKEN, SET_CHASE_SPEED, SET_RENDERER, SET_TOUCH, SET_UPDATES };
+       SET_DAMAGE_DEALT, SET_DAMAGE_TAKEN, SET_CHASE_SPEED, SET_RENDERER, SET_TOUCH, SET_UPDATES, SET_MINIMAP_TOP };
 /* Changes a setting a step (d: -1 or 1; on and off settings flip), applies
  * and saves it. */
 void settings_step(int which, int d);

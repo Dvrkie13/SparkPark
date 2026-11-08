@@ -82,6 +82,9 @@ typedef struct GXDrawState {
      * texture coordinates'); the rest are XF's MATINDEX registers' alike
      * for every vertex. */
     int mtx_per_vertex;
+    /* What the draw is of: 0 the game's picture, 1 the minimap, which a
+     * second screen shows (hle_gx.c marks it). */
+    int screen;
     const uint32_t* xf;    /* GX_XF_WORDS words, laid out as above */
     int xf_dirty_lo, xf_dirty_hi; /* words changed since the last draw (lo >= hi: none) */
     /* What the batch draws, the same from frame to frame (its display

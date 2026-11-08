@@ -44,6 +44,7 @@ void vk_window_back(void);
 int input_android_event(AInputEvent* e); /* input_android.c */
 void audio_android_pause(int paused);    /* audio_android.c */
 int hle_widescreen(void);
+void second_screen_start(JavaVM* vm, jobject activity); /* second_screen_android.c */
 extern struct AAssetManager* g_android_assets; /* prompts.c */
 
 struct android_app* g_android_app;
@@ -470,6 +471,7 @@ void android_main(struct android_app* app) {
         }
     }
     AChoreographer_registerRefreshRateCallback(AChoreographer_getInstance(), on_refresh_rate, NULL);
+    second_screen_start(app->activity->vm, app->activity->clazz);
     for (;;) {
         int events, fd;
         struct android_poll_source* source;

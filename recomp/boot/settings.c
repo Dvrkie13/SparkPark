@@ -204,7 +204,7 @@ void settings_save(void) {
             FOV_MAX);
     fprintf(f, "aniso = %d ; anisotropic texture filtering: 1 (off), 2, 4, 8 or 16\n", g_settings.aniso);
 #ifdef __ANDROID__
-    fprintf(f, "\n");
+    fprintf(f, "minimap_top = %d ; with a second screen, the minimap on the game's screen too\n\n", g_settings.minimap_top);
 #else
     fprintf(f, "renderer = %s ; opengl or vulkan, from the next start\n\n",
             g_settings.renderer == RENDERER_VULKAN ? "vulkan" : "opengl");
@@ -295,6 +295,7 @@ void settings_load(void) {
             if (!strcmp(name, "aniso")) g_settings.aniso = valid_aniso(atoi(p));
             if (!strcmp(name, "renderer")) g_settings.renderer = strstr(p, "vulkan") ? RENDERER_VULKAN : RENDERER_OPENGL;
             if (!strcmp(name, "frame_rate")) g_settings.frame_rate = valid_frame_rate(atoi(p));
+            if (!strcmp(name, "minimap_top")) g_settings.minimap_top = atoi(p) != 0;
             if (!strcmp(name, "fov")) {
                 int v = atoi(p) / 5 * 5;
                 g_settings.fov = v < FOV_MIN ? FOV_MIN : v > FOV_MAX ? FOV_MAX : v;
@@ -398,6 +399,7 @@ void settings_step(int which, int d) {
     }
     case SET_RENDERER: g_settings.renderer = !g_settings.renderer; break;
     case SET_TOUCH: g_settings.touch_controls = !g_settings.touch_controls; break;
+    case SET_MINIMAP_TOP: g_settings.minimap_top = !g_settings.minimap_top; break;
     case SET_RUMBLE:
         g_settings.rumble = (g_settings.rumble + d + 4) % 4;
         input_rumble_preview();

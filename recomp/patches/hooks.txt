@@ -87,3 +87,4 @@
 0x8008FFA0 nsDelhi::nsObject::KineticEnergyControl::virt0x4_0xC  # hle_modifiers.c: chase speed
 0x8001F2A0 nsDelhi::nsCamera::CameraManager::fn_8001F2A0  # hle_camera.c: HOME enters and leaves first person
 0x8001D5B0 nsDelhi::nsCamera::CameraFirstPerson::virt0x18  # hle_camera.c: turned by the right stick and mouse
+0x801CDCE0 fn_801CDCE0  # hle_gx.c: the minimap marked for the second screen

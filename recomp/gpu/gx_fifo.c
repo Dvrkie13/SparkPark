@@ -58,6 +58,7 @@ static void flush_batch(void);
 /* Set when anything build_state reads may have changed: draws in between
  * reuse the state built last. */
 static int sStateDirty = 1;
+static int sScreen; /* GXDrawState's screen, for the draws from here */
 
 static void xf_write(uint32_t addr, uint32_t value) {
     int i;
@@ -1053,8 +1054,9 @@ static void use_current_state(int mtx_per_vertex) {
         build_state(&sState); /* may draw the pending batch, if a texture changes */
         sStateDirty = 0;
     }
-    if (sState.mtx_per_vertex != mtx_per_vertex) {
+    if (sState.mtx_per_vertex != mtx_per_vertex || sState.screen != sScreen) {
         sState.mtx_per_vertex = mtx_per_vertex;
+        sState.screen = sScreen;
         rebuilt = 1;
     }
     /* Everything but the XF fields, which build_state leaves zero. A
@@ -1619,6 +1621,7 @@ static size_t run(const uint8_t* p, size_t len, int depth, size_t* need) {
         } else if (op == 0x08) {
             if (left < 6) { *need = 6; break; }
             cp[c[1]] = rd32(c + 2);
+            if (c[1] == 0xF0) sScreen = (int)cp[0xF0]; /* not the GPU's: hle_gx.c's mark */
             if (c[1] == 0x30) xf_write(0x1018, cp[0x30]);
             if (c[1] == 0x40) xf_write(0x1019, cp[0x40]);
             pos += 6;

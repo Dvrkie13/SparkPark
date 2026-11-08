@@ -500,7 +500,7 @@ static void memory_barrier(VkCommandBuffer cb) {
 /* Textures: numbered places in the shaders' array */
 
 #define MAX_TEXTURES 16384 /* as the shaders declare */
-enum { TEX_WHITE, TEX_EFB, TEX_MENU, TEX_FIRST };
+enum { TEX_WHITE, TEX_EFB, TEX_MENU, TEX_MAP, TEX_FIRST };
 
 typedef struct Tex {
     Image im;
@@ -615,7 +615,7 @@ typedef struct Slot {
     VkCommandPool pool;
     VkCommandBuffer up, cb, out; /* uploads, then the frame, then its copy to the swapchain's image */
     VkFence fence;
-    VkSemaphore acquired;
+    VkSemaphore acquired, acquired2; /* the swapchains' images, the main one's and the second screen's */
     uint64_t serial; /* the frame last submitted from here */
     /* Rings, filled from the start each time the slot is used: draw data
      * (XF and TEV state, read by the shaders), vertices and indices of
@@ -1214,6 +1214,19 @@ static VkImage sChainImages[8];
 static VkSemaphore sRendered[8];
 static uint32_t sChainCount;
 static int sChainW, sChainH, sChainStale;
+/* The second screen's (Android): its window's surface and swapchain, and
+ * the image of it copied to this frame, if one was (sAcquired2). */
+static VkSurfaceKHR sSurface2;
+static VkSwapchainKHR sChain2;
+static VkImage sChain2Images[8];
+static VkSemaphore sRendered2[8];
+static uint32_t sChain2Count, sImage2;
+static int sChain2W, sChain2H, sChain2Stale, sAcquired2;
+/* Drawn for it (draw_bottom): its picture, and the minimap's. */
+static int sBottomW, sBottomH; /* sBottom's size; 0 without a second screen */
+static int sMapSamples, sBottomDumped;
+static Image sBottom, sMap, sMapMs, sMapDepth;
+static Buffer sReadback2; /* sBottom, for RECOMP_GX_DUMP */
 
 /* On Android the swapchain is made unrotated and the compositor turns it
  * for a landscape window (make_swapchain), and every acquire and present
@@ -1238,7 +1251,7 @@ static int sChainW, sChainH, sChainStale;
 static pthread_mutex_t sPresentLock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t sPresentWake = PTHREAD_COND_INITIALIZER;
 static int sPresentStarted, sPresentPending;
-static uint32_t sPresentImage;
+static uint32_t sPresentImage, sPresentImage2; /* the second ~0u if none */
 
 static void* present_thread(void* arg) {
     (void)arg;
@@ -1248,14 +1261,30 @@ static void* present_thread(void* arg) {
         VkResult r;
         while (!sPresentPending) pthread_cond_wait(&sPresentWake, &sPresentLock);
         pthread_mutex_unlock(&sPresentLock);
-        pi.waitSemaphoreCount = 1;
-        pi.pWaitSemaphores = &sRendered[sPresentImage];
+        VkSwapchainKHR chains[2];
+        VkSemaphore waits[2];
+        uint32_t images[2];
+        VkResult results[2] = {VK_SUCCESS, VK_SUCCESS};
+        chains[0] = sChain;
+        waits[0] = sRendered[sPresentImage];
+        images[0] = sPresentImage;
         pi.swapchainCount = 1;
-        pi.pSwapchains = &sChain;
-        pi.pImageIndices = &sPresentImage;
+        if (sPresentImage2 != ~0u) {
+            chains[1] = sChain2;
+            waits[1] = sRendered2[sPresentImage2];
+            images[1] = sPresentImage2;
+            pi.swapchainCount = 2;
+        }
+        pi.waitSemaphoreCount = pi.swapchainCount;
+        pi.pWaitSemaphores = waits;
+        pi.pSwapchains = chains;
+        pi.pImageIndices = images;
+        pi.pResults = results;
         r = vkQueuePresentKHR(sQueue, &pi);
+        (void)r;
         pthread_mutex_lock(&sPresentLock);
-        if (r == VK_ERROR_OUT_OF_DATE_KHR) sChainStale = 1;
+        if (results[0] == VK_ERROR_OUT_OF_DATE_KHR) sChainStale = 1;
+        if (pi.swapchainCount == 2 && results[1] < 0) sChain2Stale = 1;
         sPresentPending = 0;
         pthread_cond_broadcast(&sPresentWake);
     }
@@ -1268,7 +1297,7 @@ static void present_done(void) {
     pthread_mutex_unlock(&sPresentLock);
 }
 
-static void present_later(uint32_t image) {
+static void present_later(uint32_t image, uint32_t image2) {
     if (!sPresentStarted) {
         pthread_t t;
         pthread_create(&t, NULL, present_thread, NULL);
@@ -1277,6 +1306,7 @@ static void present_later(uint32_t image) {
     }
     pthread_mutex_lock(&sPresentLock);
     sPresentImage = image;
+    sPresentImage2 = image2;
     sPresentPending = 1;
     pthread_cond_broadcast(&sPresentWake);
     pthread_mutex_unlock(&sPresentLock);
@@ -1478,7 +1508,8 @@ static int sArenaCopied;
 static void end_slot(int acquired, uint32_t image, int dump, int dw, int dh) {
     VkSubmitInfo si[2] = {{VK_STRUCTURE_TYPE_SUBMIT_INFO}, {VK_STRUCTURE_TYPE_SUBMIT_INFO}};
     VkCommandBuffer cbs[2];
-    VkPipelineStageFlags wait = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    VkPipelineStageFlags wait[2] = {VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT};
+    VkSemaphore waits[2], signals[2];
     end_efb();
     if (sArenaCopied) {
         memory_barrier(S->up);
@@ -1498,17 +1529,20 @@ static void end_slot(int acquired, uint32_t image, int dump, int dw, int dh) {
         CHECK(vkEndCommandBuffer(S->out));
         si[1].commandBufferCount = 1;
         si[1].pCommandBuffers = &S->out;
-        si[1].waitSemaphoreCount = 1;
-        si[1].pWaitSemaphores = &S->acquired;
-        si[1].pWaitDstStageMask = &wait;
-        si[1].signalSemaphoreCount = 1;
-        si[1].pSignalSemaphores = &sRendered[image];
+        waits[0] = S->acquired;
+        signals[0] = sRendered[image];
+        waits[1] = S->acquired2;
+        signals[1] = sAcquired2 ? sRendered2[sImage2] : VK_NULL_HANDLE;
+        si[1].waitSemaphoreCount = si[1].signalSemaphoreCount = sAcquired2 ? 2 : 1;
+        si[1].pWaitSemaphores = waits;
+        si[1].pWaitDstStageMask = wait;
+        si[1].pSignalSemaphores = signals;
     }
     present_done();
     CHECK(vkQueueSubmit(sQueue, acquired ? 2 : 1, si, S->fence));
     S->serial = sSerial++;
 #ifdef __ANDROID__
-    if (acquired) present_later(image);
+    if (acquired) present_later(image, sAcquired2 ? sImage2 : ~0u);
 #else
     if (acquired) {
         VkPresentInfoKHR pi = {VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
@@ -1527,7 +1561,12 @@ static void end_slot(int acquired, uint32_t image, int dump, int dw, int dh) {
         CHECK(vkWaitForFences(sDev, 1, &S->fence, VK_TRUE, UINT64_MAX));
         snprintf(path, sizeof(path), "%s/frame_%05u.bmp", sDumpDir, sPresented);
         write_bmp(path, sReadback.map, dw, dh);
+        if (sBottomDumped) {
+            snprintf(path, sizeof(path), "%s/second_%05u.bmp", sDumpDir, sPresented);
+            write_bmp(path, sReadback2.map, sBottom.w, sBottom.h);
+        }
     }
+    sAcquired2 = sBottomDumped = 0;
     sSlot = (sSlot + 1) % SLOTS;
     S = &sSlots[sSlot];
     begin_slot();
@@ -1870,6 +1909,7 @@ static int vk_init(void) {
         s->out = cbs[2];
         CHECK(vkCreateFence(sDev, &fci, NULL, &s->fence));
         CHECK(vkCreateSemaphore(sDev, &sci, NULL, &s->acquired));
+        CHECK(vkCreateSemaphore(sDev, &sci, NULL, &s->acquired2));
         s->data = make_buffer((VkDeviceSize)2 << 20, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                               host);
         s->verts = make_buffer((VkDeviceSize)4 << 20, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, host);
@@ -2477,16 +2517,369 @@ static void spec_start(void) {
 #endif
 }
 
+static void draw_indexed(VkBuffer vb, VkBuffer ib, int32_t base_vertex, uint32_t first_index, uint32_t count) {
+    if (sCmd.vb != vb) {
+        VkDeviceSize zero = 0;
+        vkCmdBindVertexBuffers(S->cb, 0, 1, &vb, &zero);
+        sCmd.vb = vb;
+    }
+    if (sCmd.ib != ib) {
+        vkCmdBindIndexBuffer(S->cb, ib, 0, VK_INDEX_TYPE_UINT32);
+        sCmd.ib = ib;
+    }
+    vkCmdDrawIndexed(S->cb, count, 1, first_index, base_vertex, 0);
+}
+
+/* ------------------------------------------------------------------------ */
+/* The second screen (the AYN Thor's lower one, on Android, whose window
+ * second_screen_android.c gives): the minimap, drawn there as well. Its
+ * draws (GXDrawState.screen 1) are kept as they come, and drawn again as
+ * the frame is presented, into sMap, with the minimap's part of the EFB
+ * (kMapRect) stretched over it; drawn into the EFB too only if the setting
+ * says so. sMap is drawn into sBottom, the screen's picture, which is
+ * copied to its swapchain's image with the main one's. On Windows,
+ * RECOMP_GX_SECOND=<w>x<h> draws sBottom at that size without a screen,
+ * for RECOMP_GX_DUMP (second_*.bmp). */
+typedef struct MapDraw {
+    VkPipeline p;
+    VkBuffer vb, ib, data;
+    uint32_t pc[10], first, count;
+    int32_t base;
+    float vp[6];
+    int sc[4], cull, dtest, dwrite, dfunc;
+} MapDraw;
+static MapDraw* sMapDraws;
+static int sMapCount, sMapCap;
+static const float kMapRect[4] = {456, 255, 597, 431}; /* x0, y0, x1, y1 in the EFB */
+static const VkClearColorValue kBottomColor = {{0.05f, 0.06f, 0.09f, 1}};
+
+static void map_keep(VkPipeline p, const uint32_t* pc, const GXDrawState* st, VkBuffer vb, VkBuffer ib, int32_t base,
+                     uint32_t first, uint32_t count) {
+    MapDraw* d;
+    if (sMapCount == sMapCap) {
+        sMapCap = sMapCap ? sMapCap * 2 : 64;
+        sMapDraws = (MapDraw*)realloc(sMapDraws, (size_t)sMapCap * sizeof(MapDraw));
+    }
+    d = &sMapDraws[sMapCount++];
+    d->p = p;
+    memcpy(d->pc, pc, sizeof(d->pc));
+    d->vb = vb;
+    d->ib = ib;
+    d->data = S->data.buf; /* the offsets in pc[0..1] are into it */
+    d->base = base;
+    d->first = first;
+    d->count = count;
+    memcpy(d->vp, st->viewport, sizeof(d->vp));
+    memcpy(d->sc, st->scissor, sizeof(d->sc));
+    d->cull = (int)kCull[st->cull_mode & 3];
+    d->dtest = st->z_enable;
+    d->dwrite = st->z_enable && st->z_update;
+    d->dfunc = (int)kDepthFunc[st->z_func & 7];
+}
+
+/* Where the minimap goes in sBottom (x, y, w, h): in its first half (the
+ * left, or the top), as large as fits with a margin, at its shape on the
+ * game's screen. */
+static void bottom_layout(int w, int h, int* r) {
+    double aspect = (kMapRect[2] - kMapRect[0]) * sPixelAspect / (kMapRect[3] - kMapRect[1]);
+    double bw = w >= h ? w / 2.0 : w, bh = w >= h ? h : h / 2.0;
+    double mh = bh * 0.92, mw = mh * aspect;
+    if (mw > bw * 0.92) {
+        mw = bw * 0.92;
+        mh = mw / aspect;
+    }
+    r[0] = (int)((bw - mw) / 2);
+    r[1] = (int)((bh - mh) / 2);
+    r[2] = (int)mw;
+    r[3] = (int)mh;
+}
+
+static void map_images(int w, int h) {
+    if (sMap.w == w && sMap.h == h && sMapSamples == sMsaa) return;
+    drop_image(&sMap);
+    drop_image(&sMapMs);
+    drop_image(&sMapDepth);
+    sMap = make_image(w, h, 1, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                      VK_SAMPLE_COUNT_1_BIT);
+    if (sMsaa > 1)
+        sMapMs = make_image(w, h, 1, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                            (VkSampleCountFlagBits)sMsaa);
+    sMapDepth = make_image(w, h, 1, VK_FORMAT_D32_SFLOAT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                           (VkSampleCountFlagBits)sMsaa);
+    sMapSamples = sMsaa;
+    sTex[TEX_MAP].im = sMap; /* a copy of the handles, as for TEX_EFB */
+    sTex[TEX_MAP].sampler = sLinearClamp;
+    set_texture(TEX_MAP);
+}
+
+/* The minimap's draws again, into sMap. */
+static void draw_map(void) {
+    VkRenderingAttachmentInfo ca = {VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+    VkRenderingAttachmentInfo da = {VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+    VkRenderingInfo ri = {VK_STRUCTURE_TYPE_RENDERING_INFO};
+    float sx = (float)sMap.w / (kMapRect[2] - kMapRect[0]), sy = (float)sMap.h / (kMapRect[3] - kMapRect[1]);
+    int i;
+    transition(S->cb, &sMap, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    if (sMapMs.img) transition(S->cb, &sMapMs, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    transition(S->cb, &sMapDepth, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+    ca.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    ca.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    ca.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    ca.clearValue.color = kBottomColor;
+    if (sMapMs.img) {
+        ca.imageView = sMapMs.view;
+        ca.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        ca.resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
+        ca.resolveImageView = sMap.view;
+        ca.resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    } else {
+        ca.imageView = sMap.view;
+    }
+    da.imageView = sMapDepth.view;
+    da.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+    da.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; /* to the far plane, 0 (reversed) */
+    da.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    ri.renderArea.extent.width = (uint32_t)sMap.w;
+    ri.renderArea.extent.height = (uint32_t)sMap.h;
+    ri.layerCount = 1;
+    ri.colorAttachmentCount = 1;
+    ri.pColorAttachments = &ca;
+    ri.pDepthAttachment = &da;
+    vkCmdBeginRendering(S->cb, &ri);
+    for (i = 0; i < sMapCount; i++) {
+        const MapDraw* d = &sMapDraws[i];
+        float x0 = (d->vp[0] - kMapRect[0]) * sx, x1 = (d->vp[0] + d->vp[2] - kMapRect[0]) * sx;
+        float y0 = (d->vp[1] - kMapRect[1]) * sy, y1 = (d->vp[1] + d->vp[3] - kMapRect[1]) * sy;
+        float zn = d->vp[4] < 0 ? 0 : d->vp[4], zf = d->vp[5] > 1 ? 1 : d->vp[5];
+        int c0 = (int)floor((d->sc[0] - kMapRect[0]) * sx + 0.5f), c1 = (int)floor((d->sc[2] - kMapRect[0]) * sx + 0.5f);
+        int r0 = (int)floor((d->sc[1] - kMapRect[1]) * sy + 0.5f), r1 = (int)floor((d->sc[3] - kMapRect[1]) * sy + 0.5f);
+        if (d->data != S->data.buf) continue; /* the data ring was replaced since: its state is gone */
+        if (c1 > sMap.w) c1 = sMap.w;
+        if (r1 > sMap.h) r1 = sMap.h;
+        use_pipeline(d->p);
+        set_viewport(x0, y1, x1 - x0, y0 - y1, 1.0f - zf, 1.0f - zn);
+        set_scissor(c0, r0, c1 - c0, r1 - r0);
+        set_cull(d->cull);
+        set_depth(d->dtest, d->dwrite, d->dfunc);
+        bind_data((VkDeviceSize)d->pc[0] * 4, (VkDeviceSize)d->pc[1] * 4);
+        push(d->pc, sizeof(d->pc));
+        draw_indexed(d->vb, d->ib, d->base, d->first, d->count);
+    }
+    vkCmdEndRendering(S->cb);
+    transition(S->cb, &sMap, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+}
+
+/* The second screen's picture, into sBottom, for this frame. */
+static void draw_bottom(void) {
+    VkRenderingAttachmentInfo ca = {VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+    VkRenderingInfo ri = {VK_STRUCTURE_TYPE_RENDERING_INFO};
+    int r[4];
+    Quad q;
+    if (sBottom.w != sBottomW || sBottom.h != sBottomH) {
+        drop_image(&sBottom);
+        sBottom = make_image(sBottomW, sBottomH, 1, VK_FORMAT_R8G8B8A8_UNORM,
+                             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_SAMPLE_COUNT_1_BIT);
+    }
+    bottom_layout(sBottomW, sBottomH, r);
+    if (sMapCount && r[2] > 0 && r[3] > 0) {
+        map_images(r[2], r[3]);
+        draw_map();
+    }
+    transition(S->cb, &sBottom, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    ca.imageView = sBottom.view;
+    ca.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    ca.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    ca.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    ca.clearValue.color = kBottomColor;
+    ri.renderArea.extent.width = (uint32_t)sBottomW;
+    ri.renderArea.extent.height = (uint32_t)sBottomH;
+    ri.layerCount = 1;
+    ri.colorAttachmentCount = 1;
+    ri.pColorAttachments = &ca;
+    vkCmdBeginRendering(S->cb, &ri);
+    if (sMapCount && r[2] > 0 && r[3] > 0) {
+        use_pipeline(pipeline(PK_BLIT, 0));
+        set_viewport((float)r[0], (float)r[1], (float)r[2], (float)r[3], 0, 1);
+        set_scissor(0, 0, sBottomW, sBottomH);
+        set_cull(VK_CULL_MODE_NONE);
+        set_depth(0, 0, VK_COMPARE_OP_ALWAYS);
+        memset(&q, 0, sizeof(q));
+        q.src[2] = q.src[3] = 1;
+        q.tex = TEX_MAP;
+        quad(&q);
+    }
+    vkCmdEndRendering(S->cb);
+    transition(S->cb, &sBottom, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+}
+
+/* Copies a picture to a swapchain's image just acquired, recorded into
+ * S->out, and readies it for presenting. */
+static void copy_to_chain(const Image* from, VkImage to, int w, int h) {
+    VkImageMemoryBarrier2 b = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+    VkDependencyInfo d = {VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+    VkImageBlit blit;
+    b.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+    b.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+    b.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
+    b.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    b.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    b.srcQueueFamilyIndex = b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    b.image = to;
+    b.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    b.subresourceRange.levelCount = 1;
+    b.subresourceRange.layerCount = 1;
+    d.imageMemoryBarrierCount = 1;
+    d.pImageMemoryBarriers = &b;
+    vkCmdPipelineBarrier2(S->out, &d);
+    memset(&blit, 0, sizeof(blit));
+    blit.srcSubresource.aspectMask = blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    blit.srcSubresource.layerCount = blit.dstSubresource.layerCount = 1;
+    blit.srcOffsets[1].x = from->w;
+    blit.srcOffsets[1].y = from->h;
+    blit.dstOffsets[1].x = w;
+    blit.dstOffsets[1].y = h;
+    blit.srcOffsets[1].z = blit.dstOffsets[1].z = 1;
+    vkCmdBlitImage(S->out, from->img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, to, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
+                   &blit, from->w == w && from->h == h ? VK_FILTER_NEAREST : VK_FILTER_LINEAR);
+    b.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
+    b.dstAccessMask = 0;
+    b.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    b.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    vkCmdPipelineBarrier2(S->out, &d);
+}
+
+#ifdef __ANDROID__
+struct ANativeWindow* second_window_take(unsigned* gen); /* second_screen_android.c */
+void second_window_drop(void);
+unsigned second_window_gen(void);
+static unsigned sSecondGen = ~0u; /* the window's, as last taken */
+
+static void drop_chain2(void) {
+    uint32_t i;
+    if (sChain2) vkDestroySwapchainKHR(sDev, sChain2, NULL);
+    for (i = 0; i < sChain2Count; i++) vkDestroySemaphore(sDev, sRendered2[i], NULL);
+    sChain2 = VK_NULL_HANDLE;
+    sChain2Count = 0;
+    sBottomW = sBottomH = 0;
+}
+
+static void drop_surface2(void) {
+    drop_chain2();
+    if (sSurface2) vkDestroySurfaceKHR(sInstance, sSurface2, NULL);
+    sSurface2 = VK_NULL_HANDLE;
+    second_window_drop();
+}
+
+static void make_chain2(void) {
+    VkSurfaceCapabilitiesKHR caps;
+    VkSurfaceFormatKHR formats[64];
+    uint32_t nf = 64, i, count;
+    VkBool32 present = VK_FALSE;
+    VkSwapchainCreateInfoKHR ci = {VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
+    VkSemaphoreCreateInfo si = {VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+    vkGetPhysicalDeviceSurfaceSupportKHR(sGpu, sQueueFamily, sSurface2, &present);
+    if (!present || vkGetPhysicalDeviceSurfaceCapabilitiesKHR(sGpu, sSurface2, &caps) != VK_SUCCESS) return;
+    vkGetPhysicalDeviceSurfaceFormatsKHR(sGpu, sSurface2, &nf, formats);
+    if (!nf || caps.currentExtent.width == 0xFFFFFFFFu || !caps.currentExtent.width || !caps.currentExtent.height) return;
+    ci.surface = sSurface2;
+    count = caps.minImageCount < 3 ? 3 : caps.minImageCount;
+    if (caps.maxImageCount && count > caps.maxImageCount) count = caps.maxImageCount;
+    if (count > 8) count = 8;
+    ci.minImageCount = count;
+    ci.imageFormat = formats[0].format;
+    ci.imageColorSpace = formats[0].colorSpace;
+    for (i = 0; i < nf; i++) {
+        if (formats[i].format == VK_FORMAT_B8G8R8A8_UNORM || formats[i].format == VK_FORMAT_R8G8B8A8_UNORM) {
+            ci.imageFormat = formats[i].format;
+            ci.imageColorSpace = formats[i].colorSpace;
+            break;
+        }
+    }
+    ci.imageExtent = caps.currentExtent;
+    ci.imageArrayLayers = 1;
+    ci.imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    ci.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    ci.preTransform = (caps.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR) ? VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR
+                                                                                       : caps.currentTransform;
+    ci.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    if (!(caps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR)) {
+        uint32_t a;
+        for (a = VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR; a < VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR; a <<= 1) {
+            if (caps.supportedCompositeAlpha & a) break;
+        }
+        ci.compositeAlpha = (VkCompositeAlphaFlagBitsKHR)a;
+    }
+    ci.presentMode = VK_PRESENT_MODE_FIFO_KHR;
+    ci.clipped = VK_TRUE;
+    if (vkCreateSwapchainKHR(sDev, &ci, NULL, &sChain2) != VK_SUCCESS) {
+        sChain2 = VK_NULL_HANDLE;
+        return;
+    }
+    sChain2Count = 8;
+    vkGetSwapchainImagesKHR(sDev, sChain2, &sChain2Count, sChain2Images);
+    for (i = 0; i < sChain2Count; i++) CHECK(vkCreateSemaphore(sDev, &si, NULL, &sRendered2[i]));
+    sChain2W = sBottomW = (int)ci.imageExtent.width;
+    sChain2H = sBottomH = (int)ci.imageExtent.height;
+    fprintf(stderr, "vulkan: second screen %dx%d, transform %u\n", sChain2W, sChain2H, (unsigned)caps.currentTransform);
+}
+
+/* The second screen's swapchain, made again when its window changed or
+ * it's out of date. */
+static void second_chain(void) {
+    unsigned gen = second_window_gen();
+    if (gen == sSecondGen && !sChain2Stale) return;
+    wait_idle();
+    sChain2Stale = 0;
+    if (gen != sSecondGen) {
+        VkAndroidSurfaceCreateInfoKHR sci = {VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR};
+        drop_surface2();
+        sci.window = second_window_take(&sSecondGen);
+        if (sci.window && vkCreateAndroidSurfaceKHR(sInstance, &sci, NULL, &sSurface2) != VK_SUCCESS)
+            sSurface2 = VK_NULL_HANDLE;
+        if (!sSurface2) second_window_drop();
+    } else {
+        drop_chain2();
+    }
+    if (sSurface2) make_chain2();
+}
+
+/* The second screen's image, acquired and drawn, with the main one's. */
+static void second_out(void) {
+    VkResult r;
+    if (!sChain2 || sBottom.w != sChain2W || sBottom.h != sChain2H) return;
+    r = vkAcquireNextImageKHR(sDev, sChain2, 0, S->acquired2, VK_NULL_HANDLE, &sImage2);
+    if (r == VK_SUCCESS || r == VK_SUBOPTIMAL_KHR) {
+        copy_to_chain(&sBottom, sChain2Images[sImage2], sChain2W, sChain2H);
+        sAcquired2 = 1;
+    } else if (r != VK_NOT_READY && r != VK_TIMEOUT) {
+        sChain2Stale = 1;
+    }
+}
+#else
+static void second_chain(void) {
+    static int checked;
+    const char* e;
+    if (checked) return;
+    checked = 1;
+    if ((e = getenv("RECOMP_GX_SECOND")) && sscanf(e, "%dx%d", &sBottomW, &sBottomH) != 2) sBottomW = sBottomH = 0;
+}
+static void second_out(void) {}
+#endif
+
 static void draw_common(const GXDrawState* st, const uint32_t* xf, VkBuffer vb, VkBuffer ib, int32_t base_vertex,
                         uint32_t first_index, uint32_t count) {
     uint32_t pc[10];
     int i;
     uint32_t key = gx_key(st);
     VkPipeline sp = spec_pipeline(st, xf, key);
+    /* The minimap, with a second screen: drawn there, and here too if
+     * the setting says so. */
+    int keep = st->screen == 1 && sBottomW, here = !keep || g_settings.minimap_top;
     /* Depth is used by a test other than "always" or by writes. */
-    begin_efb(st->z_enable && ((st->z_func & 7) != 7 || st->z_update));
+    if (here) begin_efb(st->z_enable && ((st->z_func & 7) != 7 || st->z_update));
+    if (!sp) sp = pipeline(PK_GX, key);
 
-    use_pipeline(sp ? sp : pipeline(PK_GX, key));
+    use_pipeline(sp);
     {
         /* Edges are scaled and rounded, as gl_backend.c does; flipped,
          * so row 0 is the EFB's top. */
@@ -2508,16 +2901,8 @@ static void draw_common(const GXDrawState* st, const uint32_t* xf, VkBuffer vb, 
         if (st->texture[i]) sTex[st->texture[i]].used = sSerial;
     }
     push(pc, sizeof(pc));
-    if (sCmd.vb != vb) {
-        VkDeviceSize zero = 0;
-        vkCmdBindVertexBuffers(S->cb, 0, 1, &vb, &zero);
-        sCmd.vb = vb;
-    }
-    if (sCmd.ib != ib) {
-        vkCmdBindIndexBuffer(S->cb, ib, 0, VK_INDEX_TYPE_UINT32);
-        sCmd.ib = ib;
-    }
-    vkCmdDrawIndexed(S->cb, count, 1, first_index, base_vertex, 0);
+    if (keep) map_keep(sp, pc, st, vb, ib, base_vertex, first_index, count);
+    if (here) draw_indexed(vb, ib, base_vertex, first_index, count);
 }
 
 /* Video memory the CPU can write (resizable BAR): the recorded frame is
@@ -2938,6 +3323,7 @@ static int vk_present(int x, int y, int cw, int ch, int may_drop) {
         }
         present_done(); /* which may have found the swapchain out of date */
         if (sChainStale || sChainW != w || sChainH != h) make_swapchain(w, h);
+        second_chain();
         /* The settings menu, uploaded before the frame's commands run. */
         menu = menu_draw(w, h);
         if (menu) {
@@ -3005,6 +3391,25 @@ static int vk_present(int x, int y, int cw, int ch, int may_drop) {
         }
         vkCmdEndRendering(S->cb);
         transition(S->cb, &sWin, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+        if (sBottomW > 0 && sBottomH > 0) draw_bottom();
+        if (dump && sBottom.img && sBottom.w == sBottomW && sBottom.h == sBottomH) {
+            VkBufferImageCopy r;
+            VkDeviceSize bytes = (VkDeviceSize)sBottom.w * sBottom.h * 4;
+            if (sReadback2.size < bytes) {
+                drop_buffer(&sReadback2);
+                sReadback2 = make_buffer(bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
+                                             VK_MEMORY_PROPERTY_HOST_CACHED_BIT);
+            }
+            memset(&r, 0, sizeof(r));
+            r.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            r.imageSubresource.layerCount = 1;
+            r.imageExtent.width = (uint32_t)sBottom.w;
+            r.imageExtent.height = (uint32_t)sBottom.h;
+            r.imageExtent.depth = 1;
+            vkCmdCopyImageToBuffer(S->cb, sBottom.img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, sReadback2.buf, 1, &r);
+            sBottomDumped = 1;
+        }
         if (dump) {
             VkBufferImageCopy r;
             VkDeviceSize bytes = (VkDeviceSize)w * h * 4;
@@ -3029,40 +3434,13 @@ static int vk_present(int x, int y, int cw, int ch, int may_drop) {
             present_done();
             r = vkAcquireNextImageKHR(sDev, sChain, may_drop ? 0 : UINT64_MAX, S->acquired, VK_NULL_HANDLE, &image);
             if (r == VK_SUCCESS || r == VK_SUBOPTIMAL_KHR) {
-                VkImageMemoryBarrier2 b = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
-                VkDependencyInfo d = {VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
-                VkImageBlit blit;
                 VkCommandBufferBeginInfo bi = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
                 acquired = 1;
                 bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
                 CHECK(vkBeginCommandBuffer(S->out, &bi));
                 if (r == VK_SUBOPTIMAL_KHR && !SUBOPTIMAL_IS_EXPECTED) sChainStale = 1;
-                b.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-                b.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-                b.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
-                b.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-                b.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-                b.srcQueueFamilyIndex = b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                b.image = sChainImages[image];
-                b.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-                b.subresourceRange.levelCount = 1;
-                b.subresourceRange.layerCount = 1;
-                d.imageMemoryBarrierCount = 1;
-                d.pImageMemoryBarriers = &b;
-                vkCmdPipelineBarrier2(S->out, &d);
-                memset(&blit, 0, sizeof(blit));
-                blit.srcSubresource.aspectMask = blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-                blit.srcSubresource.layerCount = blit.dstSubresource.layerCount = 1;
-                blit.srcOffsets[1].x = blit.dstOffsets[1].x = w;
-                blit.srcOffsets[1].y = blit.dstOffsets[1].y = h;
-                blit.srcOffsets[1].z = blit.dstOffsets[1].z = 1;
-                vkCmdBlitImage(S->out, sWin.img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, sChainImages[image],
-                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_NEAREST);
-                b.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
-                b.dstAccessMask = 0;
-                b.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-                b.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-                vkCmdPipelineBarrier2(S->out, &d);
+                copy_to_chain(&sWin, sChainImages[image], w, h);
+                second_out();
             } else if (r == VK_NOT_READY || r == VK_TIMEOUT) {
                 dropped = 1;
             } else {
@@ -3070,6 +3448,7 @@ static int vk_present(int x, int y, int cw, int ch, int may_drop) {
             }
         }
     }
+    sMapCount = 0;
     end_slot(acquired, image, dump, w, h);
     sPresented++;
     return dropped;
@@ -3089,6 +3468,8 @@ void vk_window_lost(void) {
     sChain = VK_NULL_HANDLE;
     sChainCount = 0;
     sChainW = sChainH = 0;
+    drop_surface2();
+    sSecondGen = ~0u; /* taken again when back */
     if (sSurface) vkDestroySurfaceKHR(sInstance, sSurface, NULL);
     sSurface = VK_NULL_HANDLE;
 }
