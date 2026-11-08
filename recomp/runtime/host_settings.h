@@ -128,3 +128,8 @@ const uint32_t* menu_draw(int w, int h);
 /* Android: changes whenever menu_draw's image may have, so a device can
  * leave an unchanged one where it is (input_android.c). */
 unsigned menu_generation(void);
+/* A second screen's friends list (friends.c), w x h, beside the minimap:
+ * NULL if there is none yet; *changed if it isn't the image last given.
+ * Touches (0 down, 1 up, 2 moved, in its pixels) scroll it. */
+const uint32_t* friends_draw(int w, int h, int* changed);
+void friends_touch(int action, float x, float y);

@@ -58,7 +58,11 @@ static void flush_batch(void);
 /* Set when anything build_state reads may have changed: draws in between
  * reuse the state built last. */
 static int sStateDirty = 1;
-static int sScreen; /* GXDrawState's screen, for the draws from here */
+/* hle_gx.c marks the draws of the layer the minimap is drawn in (with
+ * the berry counter in the park, and on menus the menu): those whose
+ * origin lands in the minimap's corner, from its map on, are the
+ * minimap's (GXDrawState's screen 1). */
+static int sScreenMarked, sMapDrawn;
 
 static void xf_write(uint32_t addr, uint32_t value) {
     int i;
@@ -1046,17 +1050,60 @@ static void flush_batch(void) {
     }
 }
 
+/* Whether the position matrix (XF's, not the vertices') puts its origin
+ * in the minimap's corner of the screen. */
+static int origin_in_minimap(const GXDrawState* st) {
+    uint32_t m = (xf[0x1018] & 63) * 4;
+    float tx = xf_float(m + 3), ty = xf_float(m + 7), tz = xf_float(m + 11), x, y;
+    if (xf[0x1026]) { /* orthographic */
+        x = xf_float(0x1020) * tx + xf_float(0x1021);
+        y = xf_float(0x1022) * ty + xf_float(0x1023);
+    } else {
+        if (tz >= 0) return 0;
+        x = (xf_float(0x1020) * tx + xf_float(0x1021) * tz) / -tz;
+        y = (xf_float(0x1022) * ty + xf_float(0x1023) * tz) / -tz;
+    }
+    x = st->viewport[0] + (x + 1) * 0.5f * st->viewport[2];
+    y = st->viewport[1] + (1 - y) * 0.5f * st->viewport[3];
+    return x >= kGxMinimapRect[0] && x < kGxMinimapRect[2] && y >= kGxMinimapRect[1] && y < kGxMinimapRect[3];
+}
+
+/* Whether a guest physical address has n bytes of memory from it. */
+static int phys_ok(uint32_t a, uint32_t n) {
+    return a + n <= 0x01800000u || (a >= 0x10000000u && a + n <= 0x14000000u);
+}
+
+/* Whether texture map 0's image is a minimap's map: a texture named
+ * Fdm<area>, its TEX0 header just before it. */
+static int texture_is_map(void) {
+    static uint32_t last = ~0u;
+    static int was;
+    uint32_t a = (bp[0x94] & 0xFFFFFFu) << 5, h = a - 0x40, name;
+    if (a == last) return was;
+    last = a;
+    was = 0;
+    if (!phys_ok(h, 0x40) || memcmp(g_mem + h, "TEX0", 4) != 0) return 0;
+    name = h + rd32(g_mem + h + 0x14);
+    was = phys_ok(name, 4) && memcmp(g_mem + name, "Fdm", 3) == 0;
+    return was;
+}
+
 /* Makes the batch one drawn with the current state, drawing the pending
  * one first if its state differs. */
 static void use_current_state(int mtx_per_vertex) {
-    int rebuilt = sStateDirty;
+    int rebuilt = sStateDirty, screen;
     if (rebuilt) {
         build_state(&sState); /* may draw the pending batch, if a texture changes */
         sStateDirty = 0;
     }
-    if (sState.mtx_per_vertex != mtx_per_vertex || sState.screen != sScreen) {
+    screen = 0;
+    if (sScreenMarked && !(mtx_per_vertex & 1) && origin_in_minimap(&sState)) {
+        if (texture_is_map()) sMapDrawn = 1;
+        screen = sMapDrawn;
+    }
+    if (sState.mtx_per_vertex != mtx_per_vertex || sState.screen != screen) {
         sState.mtx_per_vertex = mtx_per_vertex;
-        sState.screen = sScreen;
+        sState.screen = screen;
         rebuilt = 1;
     }
     /* Everything but the XF fields, which build_state leaves zero. A
@@ -1621,7 +1668,10 @@ static size_t run(const uint8_t* p, size_t len, int depth, size_t* need) {
         } else if (op == 0x08) {
             if (left < 6) { *need = 6; break; }
             cp[c[1]] = rd32(c + 2);
-            if (c[1] == 0xF0) sScreen = (int)cp[0xF0]; /* not the GPU's: hle_gx.c's mark */
+            if (c[1] == 0xF0) { /* not the GPU's: hle_gx.c's mark */
+                sScreenMarked = (int)cp[0xF0];
+                sMapDrawn = 0;
+            }
             if (c[1] == 0x30) xf_write(0x1018, cp[0x30]);
             if (c[1] == 0x40) xf_write(0x1019, cp[0x40]);
             pos += 6;

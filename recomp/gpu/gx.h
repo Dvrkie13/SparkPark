@@ -38,6 +38,9 @@ typedef struct GXTevStage {
     uint8_t ras_swap, tex_swap;
 } GXTevStage;
 
+/* Where the minimap is on the game's screen, in EFB pixels: x0, y0, x1, y1. */
+static const float kGxMinimapRect[4] = {456, 255, 597, 431};
+
 /* Everything the backend needs to draw with the current state. */
 typedef struct GXDrawState {
     int num_stages;
@@ -83,7 +86,7 @@ typedef struct GXDrawState {
      * for every vertex. */
     int mtx_per_vertex;
     /* What the draw is of: 0 the game's picture, 1 the minimap, which a
-     * second screen shows (hle_gx.c marks it). */
+     * second screen shows (gx_fifo.c). */
     int screen;
     const uint32_t* xf;    /* GX_XF_WORDS words, laid out as above */
     int xf_dirty_lo, xf_dirty_hi; /* words changed since the last draw (lo >= hi: none) */

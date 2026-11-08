@@ -217,8 +217,9 @@ static uint32_t palette_of(uint32_t tex) {
     return 0;
 }
 
-/* Decodes I4, I8, CI4, CI8 and CMPR, the formats the Pad uses. */
-static uint32_t* decode(uint32_t tex, int* pw, int* ph) {
+/* Decodes I4, I8, CI4, CI8 and CMPR, the formats the Pad uses (and the
+ * friends list, hle_friends.c). */
+uint32_t* hle_pause_decode(uint32_t tex, int* pw, int* ph) {
     int w = LD16(tex + 0x1C), h = LD16(tex + 0x1E), fmt = (int)LD32(tex + 0x20), bw, bh, tx, ty, x, y;
     uint32_t data = tex + LD32(tex + 0x10), plt = 0, pal = 0, *out;
     uint32_t colours[256];
@@ -320,7 +321,7 @@ static const uint32_t* image(const char* name, int* w, int* h) {
     if (i == WANTED) return NULL;
     if (!sTex[i].tex) find_loaded();
     if (!sTex[i].tex || LD32(sTex[i].tex) != 0x54455830) return NULL;
-    if (!sTex[i].argb) sTex[i].argb = decode(sTex[i].tex, &sTex[i].w, &sTex[i].h);
+    if (!sTex[i].argb) sTex[i].argb = hle_pause_decode(sTex[i].tex, &sTex[i].w, &sTex[i].h);
     *w = sTex[i].w;
     *h = sTex[i].h;
     return sTex[i].argb;
