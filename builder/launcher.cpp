@@ -1,19 +1,30 @@
 // SparkPark launcher: the one-time builder (CLAUDE.md, "Launcher (one-time builder)").
 //
-// What the player runs. If a completed build exists it starts the game and exits; otherwise it
-// shows the builder page (ui/index.html, made from the design reference by make_ui.py) in a
-// WebView2 window and runs the real steps behind its button:
-//   pick  -> file picker -> "dtk disc info" + "dtk disc verify", classified by disc_verify.c
-//   build -> extract (dtk) -> recompile (embedded Python, tools/recomp/recomp.py)
+// What the player runs. If a completed build of this version exists it starts the game and exits;
+// otherwise it shows the builder page (ui/index.html, made from the design reference by
+// make_ui.py) in a WebView2 window and runs the real steps behind its button:
+//   pick  -> file picker -> the disc check (disc_verify.c, upstream's, one path for every
+//            platform): "dtk disc info" refuses another game, region or revision; "dtk disc
+//            verify" against Redump: an image that differs (WBFS, scrubbed) gets a warning the
+//            player can build past, or go back from (Esc / B);
+//   build -> extract (dtk) -> main.dol checked (a patched one is refused)
+//            -> recompile (embedded Python, tools/recomp/recomp.py)
 //            -> compile + link (llvm-mingw, tools/sparkpark/build_player.py)
 //   play  -> start the game, close the builder.
+//
+// Updating: the builder is one-time per version. When build.json was written by another
+// SparkPark version, the builder opens ready to rebuild: from the disc files already extracted
+// (checked complete, main.dol checked), so no disc image is needed; if they aren't there, it asks
+// for the disc again. Before any build over an existing save, the save (game\R8AE01\nand) and
+// settings.ini are copied to backups\<date_time>; the newest 10 are kept. "Restore a backup" on
+// the page puts one back (the current save is backed up first). Saves are never deleted.
 //
 // Everything built from the player's disc stays on the player's PC, in SPARKPARK_HOME:
 //   %LOCALAPPDATA%\SparkPark            by default;
 //   <launcher folder>\data              when portable.txt sits beside the launcher;
 //   %SPARKPARK_HOME%                    when set.
 // Inside it: game\SparkParkGame.exe, game\R8AE01\{disc,sys,nand}, game\settings.ini,
-// build.json (the "build complete" marker), logs\build.log, work\ (deleted after a build).
+// build.json (the "build complete" marker), backups\, logs\build.log, work\ (deleted after a build).
 //
 // Test hooks (environment, for unattended runs): SPARKPARK_TEST_ISO (skip the file picker),
 // SPARKPARK_AUTOPRESS=<ms> (press the button when each state settles), SPARKPARK_SHOTS=<dir>
@@ -39,14 +50,18 @@
 #include <thread>
 #include <vector>
 
+#include <algorithm>
+
 #include "WebView2.h"
 #include "disc_verify.h"
+#include "sparkpark_version.h"
 
 using Microsoft::WRL::Callback;
 using Microsoft::WRL::ComPtr;
 namespace fs = std::filesystem;
 
-static const char kVersion[] = "0.2.0-alpha";
+static const char kVersion[] = SPARKPARK_VERSION;
+static const int kKeepBackups = 10;
 // Bytes in the files of R8AE01 Rev 0's data partition (all 373 extracted files), for the
 // extraction's progress. The disc is verified before extracting, so this is exact.
 static const unsigned long long kExtractBytes = 1400709637ULL;
@@ -58,6 +73,11 @@ static ComPtr<ICoreWebView2Controller> gCtl;
 static ComPtr<ICoreWebView2> gView;
 static fs::path gApp, gHome;
 static std::wstring gIso;
+static std::string gIsoSha1;        // the image's SHA-1 as "dtk disc verify" printed it
+static bool gIsoOriginal = false;   // it matched Redump's (else the player built past the warning)
+static std::string gBuiltVersion;   // build.json's version, if a build exists
+static std::string gPrevDiscSha1, gPrevImage, gPrevCheck;  // and what it says about the disc
+static bool gFromExtracted = false; // rebuild from the disc files already extracted (an update)
 static std::atomic<bool> gBusy{false};
 static std::mutex gLogMutex;
 
@@ -212,13 +232,40 @@ static unsigned long long tree_bytes(const fs::path& dir) {
 
 // ------------------------------------------------------------------------------------------
 // The disc check (pick).
+// The short reason shown on the sign (it has room for about two lines; disc_verify.c's full
+// explanation goes to the log).
+static std::string short_reason(disc_result r, const char* msg) {
+    switch (r) {
+    case DISC_WRONG_GAME: return "That's a different game. SparkPark needs PokePark Wii (USA).";
+    case DISC_WRONG_REGION: {
+        std::string m = msg, which = "another region's release";
+        size_t a = m.find("That's "), b = m.find(" of PokePark");
+        if (a == 0 && b != std::string::npos) which = m.substr(7, b - 7);
+        return "Wrong region: that's " + which + ". SparkPark needs the USA disc (R8AE01).";
+    }
+    case DISC_WRONG_REVISION: return "Wrong revision: SparkPark needs the first release (Rev 0) of the USA disc.";
+    case DISC_WRONG_CODE: return "That copy's game code is patched or modded. Use an unmodified copy of your disc.";
+    default: return "That file couldn't be read as a disc image. Pick an ISO, RVZ or WBFS.";
+    }
+}
+
+// The text after "SHA-1 :" in dtk's verify output: the image's own hash, whatever it is.
+static std::string sha1_of(const std::string& verify) {
+    size_t p = verify.find("SHA-1 :");
+    if (p == std::string::npos) return {};
+    p += 7;
+    while (p < verify.size() && verify[p] == ' ') p++;
+    std::string h;
+    while (p < verify.size() && isxdigit((unsigned char)verify[p]) && h.size() < 40) h += (char)tolower(verify[p++]);
+    return h.size() == 40 ? h : std::string();
+}
+
 static void verify_thread(std::wstring iso) {
     post(R"({"type":"verifying"})");
-    disc_file file{};
+    long long size = 0;
     if (FILE* f = _wfopen(iso.c_str(), L"rb")) {
-        if (_fseeki64(f, 0x200, SEEK_SET) == 0) fread(file.magic200, 1, 4, f);
         _fseeki64(f, 0, SEEK_END);
-        file.size = _ftelli64(f);
+        size = _ftelli64(f);
         fclose(f);
     }
     fs::path dtk = gApp / "tools" / "dtk.exe";
@@ -226,51 +273,139 @@ static void verify_thread(std::wstring iso) {
     char msg[512] = "";
     log_line("== disc check: " + narrow(iso));
     int rc = run(q(dtk) + L" disc info " + q(iso), {}, {}, nullptr, nullptr, &info);
-    disc_result r;
-    if (rc == -1) {
-        snprintf(msg, sizeof msg, "Couldn't start tools\\dtk.exe, which reads disc images. Is the SparkPark folder complete?");
-        r = DISC_UNREADABLE;
-    } else if ((r = disc_check_info(info.c_str(), &file, msg, sizeof msg)) == DISC_OK) {
-        // Hashing reads the whole image once: from a USB hard drive that's minutes, so show how
-        // far dtk has read (its I/O counters against the file's size).
-        int last = -1;
-        run(q(dtk) + L" disc verify " + q(iso), {}, {}, nullptr,
-            [&] {
-                IO_COUNTERS io{};
-                if (!tChild || file.size <= 0 || !GetProcessIoCounters(tChild, &io)) return;
-                int pct = (int)std::min<double>(99, 100.0 * io.ReadTransferCount / file.size);
-                if (pct != last) {
-                    last = pct;
-                    post(R"({"type":"verifyProgress","pct":)" + std::to_string(pct) + "}");
-                }
-            },
-            &verify);
-        r = disc_check_verify(info.c_str(), verify.c_str(), &file, msg, sizeof msg);
+    disc_result r = rc == -1 ? DISC_UNREADABLE : disc_check_info(info.c_str(), msg, sizeof msg);
+    if (r != DISC_OK) {
+        std::string why = rc == -1 ? "Couldn't start tools\\dtk.exe, which reads disc images. Is the SparkPark folder complete?"
+                                   : short_reason(r, msg);
+        log_line(std::string("disc refused: ") + (rc == -1 ? why : msg));
+        post(std::string(R"({"type":"discError","reason":)") + json_str(why) + "}");
+        gBusy = false;
+        return;
     }
-    log_line(r == DISC_OK ? "disc OK" : std::string("disc rejected: ") + msg);
-    if (r == DISC_OK) {
-        gIso = iso;
+    // Hashing reads the whole image once: from a USB hard drive that's minutes, so show how far
+    // dtk has read (its I/O counters against the file's size).
+    int last = -1;
+    run(q(dtk) + L" disc verify " + q(iso), {}, {}, nullptr,
+        [&] {
+            IO_COUNTERS io{};
+            if (!tChild || size <= 0 || !GetProcessIoCounters(tChild, &io)) return;
+            int pct = (int)std::min<double>(99, 100.0 * io.ReadTransferCount / size);
+            if (pct != last) {
+                last = pct;
+                post(R"({"type":"verifyProgress","pct":)" + std::to_string(pct) + "}");
+            }
+        },
+        &verify);
+    gIso = iso;
+    gIsoSha1 = sha1_of(verify);
+    gIsoOriginal = disc_is_original(verify.c_str()) != 0;
+    gFromExtracted = false;
+    if (gIsoOriginal) {
+        log_line("disc OK: the original disc (Redump)");
         post(R"({"type":"verified"})");
     } else {
-        // The sign has room for about two lines; the full explanation is in the log.
-        std::string why;
-        switch (r) {
-        case DISC_WRONG_GAME: why = "That's a different game. SparkPark needs PokePark Wii (USA)."; break;
-        case DISC_WRONG_REGION: {
-            std::string m = msg, which = "another region's release";
-            size_t a = m.find("That's "), b = m.find(" of PokePark");
-            if (a == 0 && b != std::string::npos) which = m.substr(7, b - 7);
-            why = "Wrong region: that's " + which + ". SparkPark needs the USA disc (R8AE01).";
-            break;
-        }
-        case DISC_WRONG_REVISION: why = "Wrong revision: SparkPark needs the first release (Rev 0) of the USA disc."; break;
-        case DISC_NKIT_SCRUBBED: why = "That's an NKit or scrubbed image. SparkPark needs a full 1:1 dump."; break;
-        case DISC_MODIFIED: why = "That image is modified: it doesn't match the original disc. Use a clean dump."; break;
-        default: why = rc == -1 ? msg : "That file couldn't be read as a disc image. Pick an ISO, RVZ or WBFS."; break;
-        }
-        post(std::string(R"({"type":"discError","reason":)") + json_str(why) + "}");
+        // The right game, region and revision, but not byte for byte the original disc: WBFS and
+        // scrubbed copies leave out the disc's padding, and usually play fine. main.dol is
+        // checked after extracting; a patched one is refused then.
+        log_line("disc differs from the original (WBFS, scrubbed or the like); the player may build anyway");
+        post(R"({"type":"verified","warn":"Not an exact copy of the disc (WBFS or scrubbed?). It usually plays fine: build, or press Esc to pick another."})");
     }
     gBusy = false;
+}
+
+// ------------------------------------------------------------------------------------------
+// Save backups: game\R8AE01\nand (the saves and photos) and game\settings.ini, copied to
+// backups\<date_time>. The newest kKeepBackups are kept; the live save is never touched here.
+static fs::path backups_dir() { return gHome / "backups"; }
+
+static std::vector<fs::path> list_backups() {
+    std::vector<fs::path> v;
+    std::error_code ec;
+    for (auto it = fs::directory_iterator(backups_dir(), ec); !ec && it != fs::directory_iterator(); it.increment(ec))
+        if (it->is_directory(ec) && fs::exists(it->path() / "nand", ec)) v.push_back(it->path());
+    std::sort(v.begin(), v.end());  // the names are timestamps: oldest first
+    return v;
+}
+
+// Returns the backup's folder, or an empty path if there was no save to back up (or it failed).
+static fs::path backup_save(const std::string& reason) {
+    std::error_code ec;
+    const fs::path game = gHome / "game", nand = game / "R8AE01" / "nand";
+    if (!fs::exists(nand, ec) || fs::is_empty(nand, ec)) return {};
+    SYSTEMTIME t;
+    GetLocalTime(&t);
+    wchar_t name[64];
+    swprintf(name, 64, L"%04u-%02u-%02u_%02u-%02u-%02u", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond);
+    fs::path dst = backups_dir() / name;
+    for (int i = 2; fs::exists(dst, ec); i++) dst = backups_dir() / (std::wstring(name) + L"_" + std::to_wstring(i));
+    fs::create_directories(dst, ec);
+    fs::copy(nand, dst / "nand", fs::copy_options::recursive, ec);
+    if (ec) {
+        log_line("backup failed: " + ec.message());
+        fs::remove_all(dst, ec);
+        return {};
+    }
+    if (fs::exists(game / "settings.ini")) fs::copy_file(game / "settings.ini", dst / "settings.ini", ec);
+    std::ofstream(dst / "backup.txt", std::ios::binary)
+        << "SparkPark save backup\nreason: " << reason << "\nmade by: SparkPark " << kVersion
+        << "\nbuilt game version: " << (gBuiltVersion.empty() ? "unknown" : gBuiltVersion) << "\n";
+    log_line("save backed up (" + reason + "): " + narrow(dst.wstring()));
+    std::vector<fs::path> all = list_backups();
+    for (size_t i = 0; all.size() > (size_t)kKeepBackups && i < all.size() - kKeepBackups; i++) {
+        fs::remove_all(all[i], ec);
+        log_line("old backup removed: " + narrow(all[i].wstring()));
+    }
+    return dst;
+}
+
+// "Restore a backup": the player picks one of backups\*, the current save is backed up first,
+// then the backup's nand and settings.ini replace the current ones.
+static void restore_backup() {
+    std::error_code ec;
+    ComPtr<IFileOpenDialog> dlg;
+    if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dlg)))) return;
+    DWORD opts = 0;
+    dlg->GetOptions(&opts);
+    dlg->SetOptions(opts | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST);
+    dlg->SetTitle(L"Choose a save backup to restore (a folder named by its date and time)");
+    ComPtr<IShellItem> folder;
+    fs::create_directories(backups_dir(), ec);
+    if (SUCCEEDED(SHCreateItemFromParsingName(backups_dir().c_str(), nullptr, IID_PPV_ARGS(&folder))))
+        dlg->SetFolder(folder.Get());
+    if (FAILED(dlg->Show(gWnd))) return;
+    ComPtr<IShellItem> item;
+    PWSTR picked = nullptr;
+    if (FAILED(dlg->GetResult(&item)) || FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &picked))) return;
+    fs::path src = picked;
+    CoTaskMemFree(picked);
+    if (!fs::exists(src / "nand")) {
+        MessageBoxW(gWnd, L"That folder isn't a SparkPark save backup (it has no nand folder).", L"SparkPark",
+                    MB_ICONWARNING);
+        return;
+    }
+    std::wstring ask = L"Replace your current save and settings with the backup from " + src.filename().wstring() +
+                       L"?\n\nYour current save is backed up first, so this can be undone.";
+    if (MessageBoxW(gWnd, ask.c_str(), L"SparkPark", MB_YESNO | MB_ICONQUESTION) != IDYES) return;
+    const fs::path game = gHome / "game", nand = game / "R8AE01" / "nand";
+    backup_save("before restoring " + narrow(src.filename().wstring()));
+    fs::path tmp = game / "R8AE01" / "nand.restoring";
+    fs::remove_all(tmp, ec);
+    fs::copy(src / "nand", tmp, fs::copy_options::recursive, ec);
+    if (ec) {
+        fs::remove_all(tmp, ec);
+        post(R"({"type":"note","error":true,"text":"Couldn't restore that backup. Your save is unchanged."})");
+        return;
+    }
+    fs::remove_all(nand, ec);
+    fs::rename(tmp, nand, ec);
+    if (ec) {  // (the folder in use?) copy it over instead
+        fs::copy(tmp, nand, fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
+        fs::remove_all(tmp, ec);
+    }
+    if (fs::exists(src / "settings.ini")) fs::copy_file(src / "settings.ini", game / "settings.ini", fs::copy_options::overwrite_existing, ec);
+    log_line("restored the save backup " + narrow(src.wstring()));
+    post(std::string(R"({"type":"note","text":)") + json_str("Save restored from " + narrow(src.filename().wstring())) +
+         R"(,"backups":)" + std::to_string(list_backups().size()) + "}");
 }
 
 // ------------------------------------------------------------------------------------------
@@ -281,25 +416,62 @@ static void progress(double pct, const char* stage) {
     post(buf);
 }
 
-static bool build_steps(std::string& why) {
+// The disc files already extracted (an earlier build's): all there, byte count and main.dol.
+static bool extracted_complete() {
+    const fs::path disc = gHome / "game" / "R8AE01" / "disc";
+    return fs::exists(disc / "sys" / "main.dol") && tree_bytes(disc) == kExtractBytes;
+}
+
+// main.dol against the one the code is recompiled from (disc_verify.c). 0 if it's the original.
+static bool dol_is_original(const fs::path& dol, std::string& why) {
+    std::ifstream f(dol, std::ios::binary);
+    std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    char msg[512] = "";
+    if (!bytes.empty() && disc_check_dol(bytes.data(), bytes.size(), msg, sizeof msg) == DISC_OK) return true;
+    log_line(std::string("main.dol refused: ") + (bytes.empty() ? "unreadable" : msg));
+    why = short_reason(DISC_WRONG_CODE, msg);
+    return false;
+}
+
+// false: failed (why says why); refuse_disc set when the disc itself is refused (a patched
+// main.dol), so the page goes back to Upload ISO instead of offering a retry.
+static bool build_steps(std::string& why, bool& refuse_disc) {
     std::error_code ec;
     const fs::path game = gHome / "game", r8 = game / "R8AE01", disc = r8 / "disc", sys = r8 / "sys";
     const fs::path work = gHome / "work", gen = work / "gen";
     const fs::path recompiler = gApp / "recompiler", python = gApp / "toolchain" / "python" / "python.exe";
     fs::path llvm = gApp / "toolchain" / "llvm-mingw";
     if (env(L"SPARKPARK_TEST_FAIL") == L"compile") llvm = gApp / "toolchain" / "missing-compiler";
+    refuse_disc = false;
     fs::remove(gHome / "build.json", ec);
     fs::remove_all(work, ec);
     fs::create_directories(gen, ec);
+    int rc;
 
-    // 1. Extract (0-12%). The saves in R8AE01\nand are kept.
+    // 1. Extract (0-12%), or, for an update, use the files an earlier build extracted. The saves
+    //    in R8AE01\nand are kept either way.
     progress(0, "extract");
-    fs::remove_all(disc, ec);
     fs::create_directories(sys, ec);
-    int rc = run(q(gApp / "tools" / "dtk.exe") + L" disc extract -q " + q(gIso) + L" " + q(disc), {}, {}, nullptr,
+    if (gFromExtracted && extracted_complete()) {
+        log_line("using the disc files already extracted (" + std::to_string(kExtractBytes) + " bytes)");
+    } else {
+        if (gIso.empty()) {
+            why = "The disc files from the last build are missing. Choose your disc image again.";
+            refuse_disc = true;
+            return false;
+        }
+        fs::remove_all(disc, ec);
+        rc = run(q(gApp / "tools" / "dtk.exe") + L" disc extract -q " + q(gIso) + L" " + q(disc), {}, {}, nullptr,
                  [&] { progress(12.0 * std::min(1.0, (double)tree_bytes(disc) / kExtractBytes), "extract"); });
-    if (rc != 0 || !fs::exists(disc / "sys" / "main.dol")) {
-        why = "Extracting the disc failed. Is there enough free space? (about 2 GB)";
+        if (rc != 0 || !fs::exists(disc / "sys" / "main.dol")) {
+            why = "Extracting the disc failed. Is there enough free space? (about 2 GB)";
+            return false;
+        }
+    }
+    // The recompiled code is made from one main.dol: a patched one can't run (upstream's check).
+    if (!dol_is_original(disc / "sys" / "main.dol", why)) {
+        fs::remove_all(disc, ec);
+        refuse_disc = true;
         return false;
     }
     if (!fs::copy_file(disc / "sys" / "main.dol", sys / "main.dol", fs::copy_options::overwrite_existing, ec)) {
@@ -356,29 +528,72 @@ static bool build_steps(std::string& why) {
     }
     fs::copy(gApp / "prompts", game / "prompts", fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
 
-    // The "build complete" marker; later starts go straight into the game.
+    // The "build complete" marker; later starts of this version go straight into the game. For a
+    // rebuild from the extracted files, the disc's hash and image path are the last build's.
+    std::string disc_sha1 = gIsoSha1, image = narrow(gIso), check = gIsoOriginal ? "original" : "differs, built anyway";
+    if (gFromExtracted && gIso.empty()) {
+        disc_sha1 = gPrevDiscSha1.empty() ? DISC_REDUMP_SHA1 : gPrevDiscSha1;
+        image = gPrevImage;
+        check = gPrevCheck.empty() ? "original" : gPrevCheck;
+    }
     std::ofstream(gHome / "build.json", std::ios::binary)
-        << "{\n  \"version\": \"" << kVersion << "\",\n  \"disc\": \"R8AE01 Rev 0\",\n  \"disc_sha1\": \""
-        << DISC_REDUMP_SHA1 << "\",\n  \"game\": \"game\\\\SparkParkGame.exe\"\n}\n";
+        << "{\n  \"version\": \"" << kVersion << "\",\n  \"disc\": \"R8AE01 Rev 0\",\n  \"disc_sha1\": "
+        << json_str(disc_sha1) << ",\n  \"disc_check\": " << json_str(check) << ",\n  \"image\": " << json_str(image)
+        << ",\n  \"main_dol_sha1\": \"" << DISC_MAIN_DOL_SHA1 << "\",\n  \"game\": \"game\\\\SparkParkGame.exe\"\n}\n";
     fs::remove_all(work, ec);
     progress(100, "link");
     return true;
 }
 
 static void build_thread() {
-    log_line("== build, SparkPark " + std::string(kVersion));
+    log_line("== build, SparkPark " + std::string(kVersion) +
+             (gBuiltVersion.empty() ? "" : " (the game was built by " + gBuiltVersion + ")"));
+    // A save from before is backed up first: a rebuild keeps it, but an update is the moment
+    // something could go wrong with it.
+    if (fs::path b = backup_save(gBuiltVersion.empty() || gBuiltVersion == kVersion
+                                     ? std::string("before rebuilding")
+                                     : "before rebuilding for SparkPark " + std::string(kVersion));
+        !b.empty())
+        post(std::string(R"({"type":"backups","count":)") + std::to_string(list_backups().size()) + "}");
     std::string why;
+    bool refuse_disc = false;
     auto t0 = std::chrono::steady_clock::now();
-    bool ok = build_steps(why);
+    bool ok = build_steps(why, refuse_disc);
     log_line(ok ? "build complete in " +
                       std::to_string(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - t0).count()) + " s"
                 : "build failed: " + why);
     if (ok) post(R"({"type":"done"})");
-    else post(std::string(R"({"type":"buildError","reason":)") + json_str(why + " See logs\\build.log.") + "}");
+    else if (refuse_disc) {
+        gIso.clear();
+        gFromExtracted = false;
+        post(std::string(R"({"type":"discError","reason":)") + json_str(why) + "}");
+    } else post(std::string(R"({"type":"buildError","reason":)") + json_str(why + " See logs\\build.log.") + "}");
     gBusy = false;
 }
 
 // ------------------------------------------------------------------------------------------
+// A string value from build.json (written above; v0.2.0's has version, disc, disc_sha1, game).
+static std::string build_json_value(const std::string& json, const std::string& key) {
+    size_t p = json.find("\"" + key + "\"");
+    if (p == std::string::npos || (p = json.find(':', p)) == std::string::npos || (p = json.find('"', p)) == std::string::npos)
+        return {};
+    std::string v;
+    for (p++; p < json.size() && json[p] != '"'; p++) {
+        if (json[p] == '\\' && p + 1 < json.size()) p++;
+        v += json[p];
+    }
+    return v;
+}
+
+static void read_build_json() {
+    std::ifstream f(gHome / "build.json", std::ios::binary);
+    std::string json((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    gBuiltVersion = build_json_value(json, "version");
+    gPrevDiscSha1 = build_json_value(json, "disc_sha1");
+    gPrevImage = build_json_value(json, "image");
+    gPrevCheck = build_json_value(json, "disc_check");
+}
+
 static bool build_complete() {
     return fs::exists(gHome / "build.json") && fs::exists(gHome / "game" / "SparkParkGame.exe") &&
            fs::exists(gHome / "game" / "R8AE01" / "sys" / "main.dol");
@@ -441,9 +656,28 @@ static void capture(const std::wstring& name) {
                           }).Get());
 }
 
+static bool gUpdate = false;  // build.json is from another SparkPark version
+
 static void on_message(const std::wstring& json) {
     auto has = [&](const wchar_t* s) { return json.find(s) != std::wstring::npos; };
-    if (has(L"\"cmd\":\"state\"")) {
+    if (has(L"\"cmd\":\"ready\"")) {
+        // What the page opens on: a fresh build, or an update's rebuild, and the backups there are.
+        post(std::string(R"({"type":"init","update":)") + (gUpdate ? "true" : "false") +
+             R"(,"fromExtracted":)" + (gFromExtracted ? "true" : "false") + R"(,"from":)" + json_str(gBuiltVersion) +
+             R"(,"to":)" + json_str(kVersion) + R"(,"backups":)" + std::to_string(list_backups().size()) + "}");
+    } else if (has(L"\"cmd\":\"back\"")) {
+        // Esc / B after a disc that differs from the original: choose another instead.
+        if (!gBusy && !gIso.empty()) {
+            log_line("the player went back to choose another disc image");
+            gIso.clear();
+            post(R"({"type":"reset"})");
+        }
+    } else if (has(L"\"cmd\":\"restore\"")) {
+        if (!gBusy.exchange(true)) {
+            restore_backup();
+            gBusy = false;
+        }
+    } else if (has(L"\"cmd\":\"state\"")) {
         size_t a = json.find(L"\"name\":\"");
         if (a != std::wstring::npos) {
             a += 8;
@@ -452,7 +686,7 @@ static void on_message(const std::wstring& json) {
     } else if (has(L"\"cmd\":\"pick\"")) {
         pick();
     } else if (has(L"\"cmd\":\"build\"")) {
-        if (!gIso.empty() && !gBusy.exchange(true)) std::thread(build_thread).detach();
+        if ((!gIso.empty() || gFromExtracted) && !gBusy.exchange(true)) std::thread(build_thread).detach();
     } else if (has(L"\"cmd\":\"play\"")) {
         if (env(L"SPARKPARK_NO_LAUNCH") == L"1" || launch_game()) PostMessageW(gWnd, WM_CLOSE, 0, 0);
         else MessageBoxW(gWnd, L"The game couldn't be started.", L"SparkPark", MB_ICONERROR);
@@ -480,7 +714,7 @@ static LRESULT CALLBACK wnd_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             if (MessageBoxW(w, L"SparkPark is still working. Stop and close anyway?", L"SparkPark",
                             MB_YESNO | MB_ICONQUESTION) != IDYES)
                 return 0;
-            log_line("closed by the player during " + std::string(gIso.empty() ? "the disc check" : "the build"));
+            log_line("closed by the player during " + std::string(gIso.empty() && !gFromExtracted ? "the disc check" : "the build"));
             ExitProcess(0);  // the job object ends dtk / Python / clang with us
         }
         DestroyWindow(w);
@@ -511,7 +745,17 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR args, int) {
     fs::create_directories(gHome / "logs", ec);
 
     bool rebuild = (args && wcsstr(args, L"--rebuild")) || (GetKeyState(VK_SHIFT) & 0x8000);
-    if (!rebuild && build_complete()) {
+    read_build_json();
+    // Built by another SparkPark version (an update unzipped over it): offer the rebuild, from
+    // the disc files already extracted when they're all there.
+    gUpdate = build_complete() && gBuiltVersion != kVersion;
+    if (gUpdate) {
+        gFromExtracted = extracted_complete();
+        log_line("== SparkPark " + std::string(kVersion) + " found a game built by " +
+                 (gBuiltVersion.empty() ? std::string("an unknown version") : gBuiltVersion) +
+                 (gFromExtracted ? "; rebuild offered from the extracted disc" : "; the disc files are missing, so the disc is asked for again"));
+    }
+    if (!rebuild && !gUpdate && build_complete()) {
         if (launch_game()) return 0;
         MessageBoxW(nullptr, L"The game couldn't be started. Run SparkPark with --rebuild to build it again.",
                     L"SparkPark", MB_ICONERROR);

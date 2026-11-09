@@ -38,7 +38,7 @@ if DEBUG_INFO:
 # Public builds: no debug settings menu (as upstream's --public); keep the call trace for crash reports.
 DEFINES = ["RECOMP_TRACE"]
 SYSLIBS = ["opengl32", "user32", "gdi32", "ole32", "windowscodecs", "comdlg32", "shell32", "winmm",
-           "dbghelp", "d3d11", "dxgi", "dxguid", "comctl32"]
+           "dbghelp", "d3d11", "dxgi", "dxguid", "comctl32", "winhttp"]  # winhttp: the update check (update.c)
 # MSVC gets this from #pragma comment(linker, ...) in import_win32.c; for lld it is a resource.
 MANIFEST = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">

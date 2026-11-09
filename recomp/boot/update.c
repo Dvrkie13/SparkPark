@@ -27,12 +27,22 @@ extern struct android_app* g_android_app; /* window_android.c */
 #include <string.h>
 
 #include "host_settings.h"
+#include "sparkpark_version.h"
 #include "version.h"
 
+/* SparkPark: its own releases, and its own version. Upstream's releases
+ * hold a program with game code built into it, which SparkPark never
+ * points players to; SparkPark's hold only the builder. As upstream's,
+ * this only opens the page: it never downloads anything. */
+/* The newest release, pre-releases included: GitHub's releases/latest
+ * leaves pre-releases out, and SparkPark's alphas are pre-releases. The
+ * list's first "tag_name" is the newest's. */
 #define API_HOST "api.github.com"
-#define API_PATH "/repos/MildRain479/PokePark-Wiicompiled/releases/latest"
-#define RELEASES_PAGE "https://github.com/MildRain479/PokePark-Wiicompiled/releases/latest"
-#define USER_AGENT "PokePark-Wiicompiled/" RECOMP_VERSION
+#define API_PATH "/repos/" SPARKPARK_REPO "/releases?per_page=1"
+#define RELEASES_PAGE "https://github.com/" SPARKPARK_REPO "/releases"
+#define USER_AGENT "SparkPark/" SPARKPARK_VERSION
+#undef RECOMP_VERSION
+#define RECOMP_VERSION SPARKPARK_VERSION
 #define MAX_REPLY (256 * 1024)
 
 static volatile int sState; /* UPDATE_* */

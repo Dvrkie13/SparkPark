@@ -51,6 +51,7 @@ def main() -> int:
         f.write(f'@call "{vcvars()}" >nul 2>nul\n')
         f.write(f'cl /nologo /O2 /MT /EHsc /std:c++17 /W3 /DUNICODE /D_UNICODE /D_CRT_SECURE_NO_WARNINGS /Fo"{obj}\\\\" '
                 f'/I"{os.path.join(native, "include")}" /I"{os.path.join(ROOT, "recomp", "boot")}" '
+                f'/I"{os.path.join(ROOT, "recomp", "runtime")}" '
                 f'"{os.path.join(HERE, "launcher.cpp")}" "{os.path.join(ROOT, "recomp", "boot", "disc_verify.c")}" '
                 f'/Fe"{exe}" /link /SUBSYSTEM:WINDOWS /MANIFEST:EMBED /MANIFESTINPUT:"{manifest}" '
                 f'"{os.path.join(native, "x64", "WebView2LoaderStatic.lib")}" '
