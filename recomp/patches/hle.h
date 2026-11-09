@@ -32,6 +32,9 @@ enum { HLE_TIMER_AUDIO = 0, HLE_TIMER_PAD = 1 };
 /* The emulated video refresh rate (RECOMP_VI_HZ, default 60). */
 double hle_vi_hz(void);
 
+/* What remote 0 had held at its last read (HOST_PAD_*). */
+uint32_t hle_wpad_held(void);
+
 /* Whether the console is set up for a 16:9 TV (RECOMP_WIDESCREEN, default
  * on; 0 for 4:3). The game then draws 16:9 pictures squeezed into its
  * 640-pixel-wide frame, as the Wii does for a TV to stretch out. */
@@ -49,6 +52,8 @@ void hle_request_minigame(int at);
 int hle_motion(uint32_t held, uint32_t report, int16_t acc[3], int16_t dots[4][2]);
 /* hle_prompts.c: redraws the button prompt glyphs if they should change. */
 void hle_prompts_update(void);
+int hle_password_press(void);
+int hle_password_unlock_saying(void);
 /* hle_pause.c: a texture of a model file, as the file is set up. */
 void hle_pause_texture(uint32_t tex);
 

@@ -30,7 +30,7 @@ void hle_request_minigame(int at); /* hle_game.c */
 
 static const char* const kActionLabel[ACT_COUNT] = {
     "Move up", "Move down", "Move left", "Move right", "2: jump, talk", "1: dash",
-    "A: Thunderbolt", "B: recenter camera", "+", "-", "HOME", "Shake", "Shake 2 (minigames)",
+    "A: Thunderbolt", "B: recenter camera", "+", "-", "First person", "Shake", "Shake 2 (minigames)",
 };
 
 /* The minigames, by At number, for the Debug section. */

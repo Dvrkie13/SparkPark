@@ -222,7 +222,41 @@ static void test_sprintf() {
 
 // recomp/patches/example_hook.c wraps the game's strlen. sprintf's "%s"
 // calls it directly, so a working hook sees that call.
+#include "../boot/disc_verify.h"
+
 extern "C" unsigned g_strlen_calls;
+
+static void test_disc() {
+    char msg[512], sha1[41];
+    const char* good = "Format: RVZ\nLossless: true\n\nTitle: Pokepark Wii\nGame ID: R8AE01\nDisc 1, Revision 0\n\n"
+                       "Partition 0\n\tGame ID: RELSAB (0001000000555045)\n\tDisc 1, Revision 3\n";
+    const char* verified = "Redump: PokePark Wii (USA) \xe2\x9c\x85\nCRC32 : 26e533d5 \xe2\x9c\x85\n"
+                           "SHA-1 : c9a6f7601fd54b5e21a0909084839d30874a9a37 \xe2\x9c\x85\n";
+    const char* other = "CRC32 : 11111111\nSHA-1 : 0123456789abcdef0123456789abcdef01234567\n";
+    const char* sameSha = "CRC32 : 11111111\nSHA-1 : C9A6F7601FD54B5E21A0909084839D30874A9A37\n";
+    const char* dol = "abc";
+    static uint8_t zeros[120];
+    check(disc_check_info(good, msg, sizeof(msg)) == DISC_OK, "disc", "the good disc refused: %s", msg);
+    check(disc_check_info("nonsense", msg, sizeof(msg)) == DISC_UNREADABLE, "disc", "not a disc");
+    check(disc_check_info(NULL, msg, sizeof(msg)) == DISC_UNREADABLE, "disc", "no output");
+    check(disc_check_id("S2LE01", 0, msg, sizeof(msg)) == DISC_WRONG_GAME, "disc", "PokePark 2");
+    check(disc_check_id("R8AP01", 0, msg, sizeof(msg)) == DISC_WRONG_REGION, "disc", "Europe");
+    check(disc_check_id("R8AJ01", 0, msg, sizeof(msg)) == DISC_WRONG_REGION, "disc", "Japan");
+    check(disc_check_id("R8AE01", 1, msg, sizeof(msg)) == DISC_WRONG_REVISION, "disc", "revision 1");
+    check(disc_is_original(verified), "disc", "the original's hashes");
+    check(disc_is_original(sameSha) == 0, "disc", "another CRC");
+    check(disc_is_original(other) == 0, "disc", "other hashes");
+    check(disc_is_original("") == 0, "disc", "no hashes");
+    check(disc_is_original(NULL) == 0, "disc", "no output");
+    disc_sha1((const uint8_t*)dol, 3, sha1);
+    check(!strcmp(sha1, "a9993e364706816aba3e25717850c26c9cd0d89d"), "disc", "sha1(abc) = %s", sha1);
+    disc_sha1((const uint8_t*)dol, 0, sha1);
+    check(!strcmp(sha1, "da39a3ee5e6b4b0d3255bfef95601890afd80709"), "disc", "sha1() = %s", sha1);
+    // 120 zeros: padding that needs a block of its own.
+    disc_sha1(zeros, sizeof(zeros), sha1);
+    check(!strcmp(sha1, "b110a88a11436b215220486c1081dec2fb0f389a"), "disc", "sha1(120 zeros) = %s", sha1);
+    check(disc_check_dol(zeros, sizeof(zeros), msg, sizeof(msg)) == DISC_WRONG_CODE, "disc", "another main.dol");
+}
 
 static void test_hook() {
     unsigned before = g_strlen_calls;
@@ -307,6 +341,7 @@ int main(int argc, char** argv) {
     test_demangle();
     test_strings();
     test_sprintf();
+    test_disc();
     test_hook();
     test_math();
 

@@ -50,6 +50,8 @@ static void swing_eye(uint32_t cam, float deg) {
     st_f32(cam + CAM_EYE + 8, (float)ld_f32(cam + CAM_AT + 8) + z * co - x * s);
 }
 
+static int in_first_person(void);
+
 static float wrap360(float a) { return a >= 360.0f ? a - 360.0f : a < 0.0f ? a + 360.0f : a; }
 
 /* Takes the tilt off the stored pitch, if it is still the one put there,
@@ -70,7 +72,8 @@ void f_80023630(ppc_t* c) {
     static uint32_t lastHeld;
     uint32_t cam = c->r[3], held = 0;
     float dx = 0, dy = 0, yaw;
-    if (g_host_mouse_read) g_host_mouse_read(&dx, &dy);
+    /* Every camera is updated each frame, in use or not. */
+    if (g_host_mouse_read && !in_first_person()) g_host_mouse_read(&dx, &dy);
     if (g_host_pad_read) g_host_pad_read(0, &held);
     untilt(cam);
     if (cam != sCam || (held & ~lastHeld & HOST_PAD_B)) {
@@ -114,6 +117,97 @@ void f_80025280(ppc_t* c) {
     untilt(cam);
     f_80025280_orig(c);
     tilt(cam);
+}
+
+/* First person. The park has a first-person camera, CameraFirstPerson, with
+ * the camera manager's two others. On the Wii, B while pointing at the
+ * screen enters it, and any button but + and - while pointing away leaves
+ * it; pointing past the screen's edges turns it. There is no remote to
+ * point here, so the right stick's click (HOME's place) enters and leaves
+ * it, the game's own switch shown that press as B, and the camera turns
+ * as the player's does, by the right stick and mouse, its pointer (the
+ * sights) held in the middle. */
+enum {
+    MGR_CURRENT = 0x48,        /* the camera in use */
+    MGR_FIRST_PERSON = 0x558,  /* none outside the park */
+    CAM_YAW_STEP = 0xE4,       /* easing in, not yet turned by the pointer */
+    CAM_PITCH_STEP = 0xE0,
+    PAD_TRIGGERED = 0x04,
+    PAD_POINTER = 0x1C,        /* x, y */
+    PAD_POINTING = 0x40        /* 2: both of the sensor bar's dots seen */
+};
+#define PAD_POINTING_YES 2
+#define PAD_B 0x400
+#define FP_PITCH_LIMIT_PARAM 8
+
+static uint32_t sManager; /* as it updates its cameras */
+
+static int in_first_person(void) {
+    uint32_t firstPerson = sManager ? LD32(sManager + MGR_FIRST_PERSON) : 0;
+    return firstPerson && LD32(sManager + MGR_CURRENT) == firstPerson;
+}
+
+/* The game's state of the current pad (the same two calls as the game). */
+static uint32_t pad_state(ppc_t* c) {
+    uint32_t r3 = c->r[3], pad;
+    f_8001DBF0(c);
+    c->r[4] = LD32(c->r[13] - 0x549C);
+    f_80034D50(c);
+    pad = c->r[3];
+    c->r[3] = r3;
+    return pad;
+}
+
+/* CameraManager::fn_8001F2A0, each frame: where it reads the pad to change
+ * camera. */
+void f_8001F2A0(ppc_t* c) {
+    static uint32_t lastHeld;
+    uint32_t mgr = c->r[3], held = hle_wpad_held(), pressed = held & ~lastHeld & HOST_PAD_HOME;
+    lastHeld = held;
+    sManager = mgr;
+    if (pressed && LD32(mgr + MGR_FIRST_PERSON)) {
+        uint32_t pad = pad_state(c), triggered = LD32(pad + PAD_TRIGGERED), pointing = LD8(pad + PAD_POINTING);
+        ST32(pad + PAD_TRIGGERED, triggered | PAD_B);
+        ST8(pad + PAD_POINTING, in_first_person() ? 0 : PAD_POINTING_YES);
+        f_8001F2A0_orig(c);
+        pad = pad_state(c);
+        ST32(pad + PAD_TRIGGERED, triggered);
+        ST8(pad + PAD_POINTING, pointing);
+        return;
+    }
+    f_8001F2A0_orig(c);
+}
+
+/* CameraFirstPerson::virt0x18, its per-frame update. */
+void f_8001D5B0(ppc_t* c) {
+    uint32_t cam = c->r[3], pad, x, y, pointing;
+    float dx = 0, dy = 0;
+    if (!in_first_person()) {
+        f_8001D5B0_orig(c);
+        return;
+    }
+    pad = pad_state(c);
+    x = LD32(pad + PAD_POINTER);
+    y = LD32(pad + PAD_POINTER + 4);
+    pointing = LD8(pad + PAD_POINTING);
+    if (g_host_mouse_read) g_host_mouse_read(&dx, &dy);
+    if (ld_f32(cam + CAM_YAW_STEP) == 0.0f && ld_f32(cam + CAM_PITCH_STEP) == 0.0f) {
+        float pitch = (float)ld_f32(cam + CAM_PITCH) - dy * MOUSE_SENSITIVITY, limit;
+        c->r[4] = FP_PITCH_LIMIT_PARAM;
+        f_8001A170(c); /* GetParamFloat */
+        c->r[3] = cam;
+        limit = (float)c->f[1];
+        st_f32(cam + CAM_PITCH, pitch > limit ? limit : pitch < -limit ? -limit : pitch);
+        st_f32(cam + CAM_YAW, wrap360((float)ld_f32(cam + CAM_YAW) - dx * MOUSE_SENSITIVITY));
+    }
+    st_f32(pad + PAD_POINTER, 0.0f);
+    st_f32(pad + PAD_POINTER + 4, 0.0f);
+    ST8(pad + PAD_POINTING, PAD_POINTING_YES);
+    f_8001D5B0_orig(c);
+    pad = pad_state(c);
+    ST32(pad + PAD_POINTER, x);
+    ST32(pad + PAD_POINTER + 4, y);
+    ST8(pad + PAD_POINTING, pointing);
 }
 
 /* Field of view. A camera (nsDelhi::nsCamera::Camera) keeps its

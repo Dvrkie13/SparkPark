@@ -4,9 +4,8 @@
  * program, as the game is read from there: its files in R8AE01\disc and
  * main.dol in R8AE01\sys. The extracting is done by decomp-toolkit
  * (tools\dtk.exe beside the program, "dtk disc extract"), which reads all
- * those formats; the disc must be PokePark Wii's (USA), R8AE01.
- * SparkPark: before extracting, the image is checked to be R8AE01 Rev 0
- * byte for byte, against the Redump dump (disc_verify.c). */
+ * those formats; the disc must be PokePark Wii's (USA), R8AE01, checked
+ * before it is extracted and its main.dol after (disc_verify.h). */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <commdlg.h>
@@ -69,9 +68,9 @@ static int extract(const char* image, const char* out) {
     return (int)code;
 }
 
-/* Runs "dtk disc <args> <image>" and collects what it prints (stdout and
- * stderr) into out, the window kept answering meanwhile. Returns dtk's exit
- * code, -1 if it couldn't start. */
+/* Runs "dtk disc <args> <image>" and collects what it prints into out, the
+ * window kept answering meanwhile. Returns dtk's exit code, -1 if it
+ * couldn't start. */
 static int run_dtk(const char* args, const char* image, char* out, size_t cap) {
     char cmd[3 * MAX_PATH], dtk[MAX_PATH];
     STARTUPINFOA si;
@@ -103,11 +102,9 @@ static int run_dtk(const char* args, const char* image, char* out, size_t cap) {
         while (PeekNamedPipe(rd, NULL, 0, NULL, &avail, NULL) && avail) {
             char buf[4096];
             if (!ReadFile(rd, buf, avail < sizeof(buf) ? avail : sizeof(buf), &got, NULL) || !got) break;
-            if (len + got >= cap) { /* keep the newest half: the results are printed last */
-                size_t keep = cap / 2 < len ? cap / 2 : len;
-                memmove(out, out + len - keep, keep);
-                len = keep;
-                if (got >= cap - 1 - len) got = (DWORD)(cap - 1 - len);
+            if (len + got >= cap) { /* the results are printed last */
+                memmove(out, out + got, len - got);
+                len -= got;
             }
             memcpy(out + len, buf, got);
             out[len += got] = '\0';
@@ -124,28 +121,42 @@ static int run_dtk(const char* args, const char* image, char* out, size_t cap) {
     return (int)code;
 }
 
-/* SparkPark: whether the image is R8AE01 Rev 0 as Redump has it. On failure
- * msg says why (wrong region or revision, NKit or scrubbed, modified). */
-static int verify_disc(const char* image, char* msg, size_t n) {
-    static char info[16384], verify[16384];
-    disc_file file;
-    FILE* f;
-    memset(&file, 0, sizeof(file));
-    if ((f = fopen(image, "rb")) != NULL) {
-        if (fseek(f, 0x200, SEEK_SET) == 0) fread(file.magic200, 1, 4, f);
-        _fseeki64(f, 0, SEEK_END);
-        file.size = _ftelli64(f);
-        fclose(f);
-    }
-    if (run_dtk("info", image, info, sizeof(info)) == -1) {
-        snprintf(msg, n, "Couldn't start tools\\dtk.exe, which reads disc images: it should be in the tools folder "
+/* Whether to go on with the image: why says what's wrong if not, and is
+ * empty if the player chose not to. */
+static int check_image(HWND w, const char* image, char* why, size_t n) {
+    static char out[16384];
+    why[0] = '\0';
+    if (run_dtk("info", image, out, sizeof(out)) == -1) {
+        snprintf(why, n, "Couldn't start tools\\dtk.exe, which reads disc images: it should be in the tools folder "
                          "beside SparkPark.exe.");
         return 0;
     }
-    if (disc_check_info(info, &file, msg, n) != DISC_OK) return 0;
-    set_text("Checking your disc...\r\nComparing it with the original disc. This takes up to a minute.");
-    run_dtk("verify", image, verify, sizeof(verify));
-    return disc_check_verify(info, verify, &file, msg, n) == DISC_OK;
+    if (disc_check_info(out, why, n) != DISC_OK) return 0;
+    set_text("Checking your disc image...\r\nThis takes up to a minute.");
+    run_dtk("verify", image, out, sizeof(out));
+    if (disc_is_original(out)) return 1;
+    return MessageBoxA(w,
+                       "This disc image isn't an exact copy of the original disc.\n\n"
+                       "WBFS and scrubbed copies leave out the disc's padding, and those play normally. A modded or "
+                       "damaged copy may not.\n\nUse it anyway?",
+                       "SparkPark", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) == IDYES;
+}
+
+/* Whether the extracted main.dol at path is the one recompiled. */
+static int check_dol(const char* path, char* why, size_t n) {
+    FILE* f = fopen(path, "rb");
+    uint8_t* dol = NULL;
+    long len = 0;
+    disc_result r = DISC_UNREADABLE;
+    if (f && fseek(f, 0, SEEK_END) == 0 && (len = ftell(f)) > 0 && fseek(f, 0, SEEK_SET) == 0 &&
+        (dol = (uint8_t*)malloc((size_t)len)) != NULL && fread(dol, 1, (size_t)len, f) == (size_t)len) {
+        r = disc_check_dol(dol, (size_t)len, why, n);
+    } else {
+        snprintf(why, n, "The disc image's game code couldn't be read. Is the file complete?");
+    }
+    free(dol);
+    if (f) fclose(f);
+    return r == DISC_OK;
 }
 
 /* Whether the extracted disc at dir is the game: its ID, R8AE01, opens
@@ -173,14 +184,15 @@ static void import(HWND w) {
                       "All files (*.*)\0*.*\0";
     ofn.lpstrFile = image;
     ofn.nMaxFile = sizeof(image);
-    ofn.lpstrTitle = "Choose your copy of PokePark Wii (USA)";
+    ofn.lpstrTitle = "Choose your copy of PokePark Wii";
     ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY;
     if (!GetOpenFileNameA(&ofn)) return;
     EnableWindow(sChoose, FALSE);
-    set_text("Checking your disc...");
-    if (!verify_disc(image, why, sizeof(why))) {
+    set_text("Checking your disc image...");
+    if (!check_image(w, image, why, sizeof(why))) {
         EnableWindow(sChoose, TRUE);
-        set_text(why);
+        set_text(why[0] ? why : "Choose your copy of the game, a disc image of PokePark Wii: Pikachu's Adventure "
+                                "(USA): an ISO, RVZ, WBFS or the like.");
         return;
     }
     snprintf(game, sizeof(game), "%s\\R8AE01", sDir);
@@ -188,7 +200,7 @@ static void import(HWND w) {
     snprintf(sys, sizeof(sys), "%s\\sys", game);
     remove_tree(disc); /* what an earlier try left */
     CreateDirectoryA(game, NULL);
-    set_text("Disc verified. Setting the game up from it...\r\nThis takes a minute or two.");
+    set_text("Setting the game up from your disc image...\r\nThis takes a minute or two.");
     code = extract(image, disc);
     if (code != 0 || !is_game(disc)) {
         remove_tree(disc);
@@ -204,6 +216,12 @@ static void import(HWND w) {
     /* main.dol where the game is looked for, as in the source tree. */
     CreateDirectoryA(sys, NULL);
     snprintf(from, sizeof(from), "%s\\sys\\main.dol", disc);
+    if (!check_dol(from, why, sizeof(why))) {
+        remove_tree(disc);
+        EnableWindow(sChoose, TRUE);
+        set_text(why);
+        return;
+    }
     snprintf(to, sizeof(to), "%s\\main.dol", sys);
     if (!CopyFileA(from, to, FALSE)) {
         EnableWindow(sChoose, TRUE);
@@ -257,7 +275,7 @@ int import_game(char* mainDol, size_t n) {
 #define S(v) MulDiv(v, dpi, 96)
     sText = CreateWindowA("STATIC",
                           "SparkPark isn't set up yet. Bring your own disc: choose your copy of PokePark Wii: "
-                          "Pikachu's Adventure (USA), as an ISO, RVZ, WBFS or the like.",
+                          "Pikachu's Adventure (USA), a disc image: an ISO, RVZ, WBFS or the like.",
                           WS_CHILD | WS_VISIBLE, S(20), S(20), S(440), S(80), w, NULL, wc.hInstance, NULL);
     sChoose = CreateWindowA("BUTTON", "Choose game file...", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
                             S(20), S(130), S(200), S(36), w, (HMENU)ID_CHOOSE, wc.hInstance, NULL);

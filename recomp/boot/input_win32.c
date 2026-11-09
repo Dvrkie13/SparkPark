@@ -10,9 +10,9 @@
  *   B                V / Left Ctrl              Y / right trigger
  *   +                P                          Start
  *   -                M                          Back
- *   HOME             Home / H                   right stick click
+ *   first person     Home / H                   right stick click
  *   camera           mouse                      right stick
- *   shake (held)     Q / Left Shift             LB
+ *   shake            Q / Left Shift             LB   (either shake: Iron Tail)
  *   shake 2          E                          RB
  *   (in minigames a shake is shake and shake 2 pressed by turns, hle_wpad.c)
  *

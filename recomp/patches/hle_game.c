@@ -15,7 +15,6 @@
 #include "hle.h"
 #include "host_input.h"
 
-extern uint32_t g_wpad0_held; /* hle_wpad.c */
 
 /* Scenes, as indexed by the scene table (0x80337FA8). */
 enum { SCENE_PARK, SCENE_ATTRACTION, SCENE_START_MENU, SCENE_LOBBY, SCENE_STRAP, SCENE_HOLD, SCENE_CHECK_DATA };
@@ -286,11 +285,33 @@ void f_801776E0(ppc_t* c) {
     }
     if (!sMovieSkip) return;
     sLastPoll = ppc_timebase();
-    if (!(g_wpad0_held & HOST_PAD_PLUS)) sHoldStart = 0;
+    if (!(hle_wpad_held() & HOST_PAD_PLUS)) sHoldStart = 0;
     else if (!sHoldStart) sHoldStart = sLastPoll;
     if (hle_movie_skip_progress() >= 100 && sMoviePolls > SKIP_AFTER_POLLS) {
         HLE_LOG("movie skipped (+ held)");
         sLastPoll = sHoldStart = 0;
         c->r[3] = THP_FINISHED;
     }
+}
+
+void hle_friends_story_data(uint32_t other); /* hle_friends.c */
+
+/* void OtherDataSingleMode::set_target_zone_data(u8 area, u8 zone, u16
+ * entrance): where the player goes next, told on loading a game too, so
+ * where the story's other data is (the berries, for the second screen).
+ * RECOMP_ZONE=<area>,<zone>[,<entrance>] sends them elsewhere instead, the
+ * first time, for testing. */
+void f_80127820(ppc_t* c) {
+    static int done;
+    const char* e = getenv("RECOMP_ZONE");
+    hle_friends_story_data(c->r[3]);
+    if (!done && e && *e) {
+        const char* p = strchr(e, ',');
+        done = 1;
+        c->r[4] = (uint32_t)atoi(e);
+        c->r[5] = p ? (uint32_t)atoi(p + 1) : 1;
+        p = p ? strchr(p + 1, ',') : NULL;
+        if (p) c->r[6] = (uint32_t)atoi(p + 1);
+    }
+    f_80127820_orig(c);
 }

@@ -119,6 +119,12 @@ Optional changes to the game's balance, all off (100%) by default:
 - **An in-game Options menu.** It's in the PokéPark Pad (pause menu) and
   on the save files screen, in the game's own style. Changes apply
   immediately and are saved in `settings.ini`.
+- **Unlock all passwords.** One button on the Password screen gives that
+  save file what all seven passwords give, and the game saves it.
+- **Update check.** At start it asks GitHub whether a newer release is
+  out. If one is, the save files screen says so, and Options > Display >
+  Updates opens its download page. Nothing is downloaded by itself, and
+  the Updates setting turns the check off.
 - Runs at 60 Hz to match PC displays (the Wii runs at 59.94 Hz).
 - **Pauses in the background** (SparkPark). While another window is in
   front, the game stops, its sound goes quiet and it takes no input, then
@@ -147,9 +153,12 @@ does.
 | | Turn camera | Mouse | Right stick |
 | + | PokéPark Pad | P | Start |
 | - | Map | M | Back |
-| HOME | | Home / H | Right stick click |
+| | First person | Home / H | Right stick click |
 | Shake | Iron Tail | Q / Left Shift (hold) | LB (hold) |
 | Shake (minigames) | Running, swinging | Q and E by turns | LB and RB by turns |
+
+In first person, the mouse or right stick looks around and - takes a
+Photo. The same button leaves it, as does any other button but + and -.
 
 While the window has focus, the mouse is captured for the camera. Esc
 releases it, and a click captures it again.
@@ -163,7 +172,8 @@ releases it, and a click captures it again.
 | Venusaur's Vine Swing, Tangrowth's Swing-Along | Swing: Q and E by turns, in time. Jump: Space | LB and RB. A |
 | Blaziken's Boulder Bash | Swing: left click or Space. Recover: Q and E by turns | X or A. LB and RB |
 | Gyarados' Aqua Dash, Empoleon's Snow Slide | Steer: A / D | Left stick |
-| Pelipper's Circle Circuit, Salamence's Air Race, Rhyperior's Bumper Burn | Steer: A / D. Climb and dive: W / S | Left stick |
+| Pelipper's Circle Circuit, Salamence's Air Race | Steer: A / D. Climb and dive: W / S | Left stick |
+| Rhyperior's Bumper Burn | Roll: WASD | Left stick |
 | Rayquaza's Balloon Panic | As flying, then aim with the mouse | Left stick, then right stick |
 | Rotom's Spooky Shoot-'em-Up | Aim: mouse | Right stick |
 | Bastiodon's Panel Crush | Buttons, as on the Wii | Buttons |
@@ -195,18 +205,15 @@ SparkPark (v0.2.0-alpha):
 
 From upstream (the game port itself):
 
-- **Graphics:** fog, indirect texturing,
-  dynamic lighting, logic ops, z-textures, and lines and points aren't
-  drawn yet.
-- **Sound:** no reverb or other effects, and the Wii Remote speaker is
-  silent.
-- **Input:** the Wii Remote pointer works only in the minigames that need
-  it (Rayquaza's and Rotom's), with the mouse or right stick; there's no
-  general pointer for menus or the camera view, and no Nunchuk. The game
-  is played sideways, so neither is needed for the main game.
-- **Android:** no rumble yet, and no HOME button on the touch controls.
-  (SparkPark keeps upstream's Android code but doesn't test it.)
-- Upstream was tested on one PC and one phone, so problems on other
+- **Graphics:** logic ops, z-textures, and lines and points aren't
+  drawn yet (no area tested so far uses them).
+- **Sound:** the Wii Remote speaker is silent. The game's own effects
+  (such as reverb) are mixed in, but no area tested so far uses them, so
+  that is untested.
+- **Input:** no Wii Remote pointer or Nunchuk. The game is played
+  sideways, so neither is needed for the main game.
+- **Android:** no rumble yet, and first person needs a controller: the touch controls have no button for it.
+- It has been tested on one PC and one phone, so problems on other
   hardware are likely: please report them.
 
 ## Building
@@ -271,6 +278,8 @@ in [recomp/README.md](recomp/README.md) and [docs/ARCHITECTURE.md](docs/ARCHITEC
   Windows and [nod](https://github.com/encounter/nod) on Android, both by
   Luke Street and contributors (MIT or Apache-2.0; licenses in
   `recomp/assets`).
+- The disc check follows [SparkPark](https://github.com/Dvrkie13/SparkPark)
+  by Dvrkie13 (CC0).
 - Button icons by [Icons8](https://icons8.com).
 
 PokePark Wii is © Nintendo, Creatures Inc., GAME FREAK inc. and The

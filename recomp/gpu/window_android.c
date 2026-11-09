@@ -44,6 +44,7 @@ void vk_window_back(void);
 int input_android_event(AInputEvent* e); /* input_android.c */
 void audio_android_pause(int paused);    /* audio_android.c */
 int hle_widescreen(void);
+void second_screen_start(JavaVM* vm, jobject activity); /* second_screen_android.c */
 extern struct AAssetManager* g_android_assets; /* prompts.c */
 
 struct android_app* g_android_app;
@@ -99,13 +100,18 @@ static void log_to_logcat(void) {
  * cores at half their clock, and a frame that takes 7 ms on a PC took
  * over 33 ms, half the game's frame rate. So the thread keeps to the
  * fastest cores, and tells Android (its performance hints, ADPF, on
- * Android 13 and later) how long each frame's work took against a 60 fps
- * budget, which raises the clocks to meet it. */
+ * Android 13 and later) how long each frame's work took against a target,
+ * which raises the clocks to meet it. The target is under a 60 fps frame:
+ * Android also lowers them until the work just fits, and with no room left
+ * a frame every so often missed its retrace, for as long as that lasted. */
 typedef struct APerformanceHintSession APerformanceHintSession;
 static APerformanceHintSession* sHint;
 static int (*sReportWork)(APerformanceHintSession* session, int64_t ns);
 
-#define FRAME_BUDGET_NS 16666667
+#define WORK_TARGET_NS 14000000
+
+static cpu_set_t sFastCores;
+static int sHaveFastCores;
 
 /* The fastest cores alone (the prime ones): on a Snapdragon 8 Gen 2 the
  * next fastest run at 88% of the prime core's clock but do far less work
@@ -134,6 +140,8 @@ static void keep_to_fast_cores(void) {
             count++;
         }
     }
+    sFastCores = set;
+    sHaveFastCores = 1;
     if (sched_setaffinity(0, sizeof(set), &set) == 0)
         fprintf(stderr, "PokePark: game thread on the %d fastest cores (%ld MHz)\n", count, top / 1000);
 }
@@ -150,7 +158,7 @@ static void start_hints(void) {
         dlsym(lib, "APerformanceHint_createSession");
     sReportWork = (int (*)(APerformanceHintSession*, int64_t))dlsym(lib, "APerformanceHint_reportActualWorkDuration");
     if (!getManager || !createSession || !sReportWork || !(manager = getManager())) return;
-    sHint = createSession(manager, &tid, 1, FRAME_BUDGET_NS);
+    sHint = createSession(manager, &tid, 1, WORK_TARGET_NS);
     fprintf(stderr, "PokePark: performance hints %s\n", sHint ? "on" : "unavailable");
 }
 
@@ -160,7 +168,15 @@ void android_frame_done(void) {
     extern uint64_t g_wait_ticks; /* hle_irq.c */
     static int started;
     static uint64_t last, lastWait;
+    static unsigned frames;
     uint64_t now = ppc_timebase();
+    /* The system undoes this for the first 20 s or so of a game, and left
+     * alone the thread then wanders onto cores that are clocked down. */
+    if (sHaveFastCores && ++frames % 30 == 0) {
+        cpu_set_t set;
+        if (sched_getaffinity(0, sizeof(set), &set) == 0 && !CPU_EQUAL(&set, &sFastCores))
+            sched_setaffinity(0, sizeof(sFastCores), &sFastCores);
+    }
     if (!started) {
         started = 1;
         keep_to_fast_cores();
@@ -346,11 +362,12 @@ static int find_game(const char* dir) {
 }
 
 /* RECOMP_* settings for test runs, which Android has no other way to
- * give: env.txt in the shared folder, a NAME=value a line. */
-static void read_env(const char* dir) {
+ * give: env.txt in the shared folder, a NAME=value a line, then
+ * env_test.txt, for a second test run's own. */
+static void read_env_file(const char* dir, const char* name) {
     char path[1024], line[512];
     FILE* f;
-    snprintf(path, sizeof(path), "%s/env.txt", dir);
+    snprintf(path, sizeof(path), "%s/%s", dir, name);
     if (!(f = fopen(path, "r"))) return;
     while (fgets(line, sizeof(line), f)) {
         char* eq = strchr(line, '=');
@@ -361,6 +378,11 @@ static void read_env(const char* dir) {
         fprintf(stderr, "PokePark: %s=%s\n", line, eq + 1);
     }
     fclose(f);
+}
+
+static void read_env(const char* dir) {
+    read_env_file(dir, "env.txt");
+    read_env_file(dir, "env_test.txt");
 }
 
 /* Otherwise the player's disc image (disc_image_android.c), which the
@@ -449,6 +471,7 @@ void android_main(struct android_app* app) {
         }
     }
     AChoreographer_registerRefreshRateCallback(AChoreographer_getInstance(), on_refresh_rate, NULL);
+    second_screen_start(app->activity->vm, app->activity->clazz);
     for (;;) {
         int events, fd;
         struct android_poll_source* source;

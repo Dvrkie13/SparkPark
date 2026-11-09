@@ -209,7 +209,11 @@ void settings_save(void) {
     fprintf(f, "widescreen = %d ; 1: the game's own 16:9 mode, 0: 4:3 as on a 4:3 TV; from the next start\n",
             g_settings.widescreen);
 #ifdef __ANDROID__
-    fprintf(f, "\n");
+    fprintf(f, "\n[dual_screen] ; only on a handheld with two screens; elsewhere all off\n");
+    fprintf(f, "on = %d ; the second screen used, for the Pad's pages and the map\n", g_settings.dual_screen);
+    fprintf(f, "swap = %d ; the game on the second screen, the Pad's pages on the main one\n", g_settings.swap_screens);
+    fprintf(f, "minimap_top = %d ; the minimap on the game's screen too\n", g_settings.minimap_top);
+    fprintf(f, "friends_list = %d ; the friends list beside the map; 0: the map alone\n\n", g_settings.friends_list);
 #else
     fprintf(f, "show_fps = %d ; a frame rate counter in the corner (F3 toggles it)\n", g_settings.show_fps);
     fprintf(f, "background_pause = %d ; 1: pause, mute and take no input while the window isn't in front\n",
@@ -229,6 +233,8 @@ void settings_save(void) {
     fprintf(f, "chase_speed = %d ; the speed of the Pokemon Pikachu chases, percent of the game's: 50, 75, 100, 125 or 150\n",
             g_settings.chase_speed);
     fprintf(f, "movie_skip = %d ; 1: holding + skips a movie\n\n", g_settings.movie_skip);
+    fprintf(f, "[updates]\n");
+    fprintf(f, "check = %d ; 1: at start, ask GitHub whether a newer version is out\n\n", g_settings.check_updates);
 #ifndef __ANDROID__ /* no mouse or keyboard */
     fprintf(f, "[mouse]\n");
     fprintf(f, "sensitivity = %.2f ; camera turn, times the default\n", g_settings.mouse_sensitivity);
@@ -268,6 +274,8 @@ void settings_load(void) {
     g_settings.movie_skip = 1;
     g_settings.rumble = 2;
     g_settings.touch_controls = 1;
+    g_settings.dual_screen = 1;
+    g_settings.friends_list = 1;
     g_settings.text_speed = 1;
     g_settings.berries = 100;
     g_settings.prices = 100;
@@ -277,6 +285,7 @@ void settings_load(void) {
     g_settings.frame_rate = 30;
     g_settings.fov = 100;
     g_settings.mouse_sensitivity = 1.0f;
+    g_settings.check_updates = 1;
     settings_default_controls();
     f = fopen(settings_path(), "r");
     if (!f) {
@@ -297,6 +306,12 @@ void settings_load(void) {
         *c = '\0';
         if (sscanf(p, "%31s", name) != 1) continue;
         p = c + 1;
+        if (!strcmp(section, "dual_screen")) {
+            if (!strcmp(name, "on")) g_settings.dual_screen = atoi(p) != 0;
+            if (!strcmp(name, "swap")) g_settings.swap_screens = atoi(p) != 0;
+            if (!strcmp(name, "minimap_top")) g_settings.minimap_top = atoi(p) != 0;
+            if (!strcmp(name, "friends_list")) g_settings.friends_list = atoi(p) != 0;
+        }
         if (!strcmp(section, "display")) {
             if (!strcmp(name, "fullscreen")) g_settings.fullscreen = atoi(p) != 0;
             if (!strcmp(name, "scale")) g_settings.scale = atoi(p) < 0 ? 0 : atoi(p) > MAX_SCALE ? MAX_SCALE : atoi(p);
@@ -307,6 +322,7 @@ void settings_load(void) {
             if (!strcmp(name, "widescreen")) g_settings.widescreen = atoi(p) != 0;
             if (!strcmp(name, "show_fps")) g_settings.show_fps = atoi(p) != 0;
             if (!strcmp(name, "background_pause")) g_settings.background_pause = atoi(p) != 0;
+            if (!strcmp(name, "minimap_top")) g_settings.minimap_top = atoi(p) != 0; /* (where it was) */
             if (!strcmp(name, "fov")) {
                 int v = atoi(p) / 5 * 5;
                 g_settings.fov = v < FOV_MIN ? FOV_MIN : v > FOV_MAX ? FOV_MAX : v;
@@ -328,6 +344,8 @@ void settings_load(void) {
                 g_settings.mouse_sensitivity = s < 0.1f ? 0.1f : s > 3.0f ? 3.0f : s;
             }
             if (!strcmp(name, "invert_tilt")) g_settings.invert_tilt = atoi(p) != 0;
+        } else if (!strcmp(section, "updates") && !strcmp(name, "check")) {
+            g_settings.check_updates = atoi(p) != 0;
         } else if (!strcmp(section, "controller") && !strcmp(name, "rumble")) {
             g_settings.rumble = atoi(p) < 0 ? 0 : atoi(p) > 3 ? 3 : atoi(p);
         } else if (!strcmp(section, "controller") && !strcmp(name, "touch_controls")) {
@@ -398,6 +416,10 @@ void settings_step(int which, int d) {
         break;
     }
     case SET_INVERT: g_settings.invert_tilt = !g_settings.invert_tilt; break;
+    case SET_UPDATES:
+        g_settings.check_updates = !g_settings.check_updates;
+        update_check();
+        break;
     case SET_ANISO: {
         static const int kAniso[] = {1, 2, 4, 8, 16};
         for (i = 0; i < 5 && kAniso[i] != g_settings.aniso; i++) {}
@@ -413,6 +435,10 @@ void settings_step(int which, int d) {
         g_settings.movie_skip = !g_settings.movie_skip;
         apply_gameplay();
         break;
+    case SET_MINIMAP_TOP: g_settings.minimap_top = !g_settings.minimap_top; break;
+    case SET_DUAL_SCREEN: g_settings.dual_screen = !g_settings.dual_screen; break;
+    case SET_SWAP_SCREENS: g_settings.swap_screens = !g_settings.swap_screens; break;
+    case SET_FRIENDS_LIST: g_settings.friends_list = !g_settings.friends_list; break;
     case SET_RUMBLE:
         g_settings.rumble = (g_settings.rumble + d + 4) % 4;
         input_rumble_preview();

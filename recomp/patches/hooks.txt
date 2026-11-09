@@ -17,6 +17,7 @@
 0x8022F080 __AI_SRC_INIT  # hle_audio.c: no audio hardware to calibrate
 0x80231080 __AXOutInitDSP  # hle_audio.c: the DSP needs no program
 0x80220890 GXDrawDone  # hle_gx.c: no GPU yet
+0x8028EF88 fn_8028EF88  # hle_gx.c: JPEG encoder (photos): its source copy put in memory first
 0x802262E0 DVDReadAsyncPrio  # hle_dvd.c: logging only
 0x80209600 OSReport  # hle_os.c: print to stderr
 0x80209690 OSPanic  # hle_os.c: print and stop
@@ -26,6 +27,12 @@
 0x8022ECD0 AIInitDMA  # hle_audio.c
 0x8022ED50 AIStartDMA  # hle_audio.c
 0x8022ED70 AIStopDMA  # hle_audio.c
+0x8022FA70 __AXGetAuxAInput  # hle_audio.c: where the DSP mixes the aux buses
+0x8022FAB0 __AXGetAuxAOutput  # hle_audio.c: where the DSP mixes the aux buses
+0x8022FB50 __AXGetAuxBInput  # hle_audio.c: where the DSP mixes the aux buses
+0x8022FB90 __AXGetAuxBOutput  # hle_audio.c: where the DSP mixes the aux buses
+0x8022FC30 __AXGetAuxCInput  # hle_audio.c: where the DSP mixes the aux buses
+0x8022FC70 __AXGetAuxCOutput  # hle_audio.c: where the DSP mixes the aux buses
 0x801741F0 fn_801741F0  # hle_game.c: logs scene changes
 0x80173E10 SceneSpecializerStrap::RunSystem  # hle_game.c: leave as soon as the park has loaded
 0x80247F10 WPADProbe  # hle_wpad.c: remote 0 connected, the rest absent
@@ -65,6 +72,8 @@
 0x801B3090 nw4r::g3d::ResTex::Init  # hle_prompts.c: the menus' button bar as the bound keys
 0x80122C60 nsDelhi::nsMenu::MenuScriptPauseMenu::MenuScriptPauseMenu  # hle_pause.c: whether the PokePark Pad is on its main page
 0x80222E00 GXLoadTexObjPreLoaded  # hle_pause.c: whether the save file screen is up
+0x802EE5D0 fscript::Run  # hle_pause.c: whether the password screen is up
+0x80125F70 nsDelhi::nsMenu::MenuScriptStartMenu::syscall0x15  # hle_pause.c: all the passwords at once
 0x80171630 SceneSpecializerPark::RunBegin  # hle_game.c: entering a minigame for testing
 0x8016C950 SceneManager::fn_8016C950  # hle_game.c: no second switch to Hold after leaving Strap early
 0x801081C0 resident_messageId_to_string  # hle_text.c: minigame instructions for the PC controls
@@ -76,3 +85,7 @@
 0x80147590 nsDelhi::nsObject::FieldAIActionChallengeChaseFly::virt0x14  # hle_modifiers.c: chase speed
 0x80149240 nsDelhi::nsObject::FieldAIActionChallengeChaseFlyVertical::virt0x14  # hle_modifiers.c: chase speed
 0x8008FFA0 nsDelhi::nsObject::KineticEnergyControl::virt0x4_0xC  # hle_modifiers.c: chase speed
+0x8001F2A0 nsDelhi::nsCamera::CameraManager::fn_8001F2A0  # hle_camera.c: HOME enters and leaves first person
+0x8001D5B0 nsDelhi::nsCamera::CameraFirstPerson::virt0x18  # hle_camera.c: turned by the right stick and mouse
+0x801CDCE0 fn_801CDCE0  # hle_gx.c: the minimap marked for the second screen
+0x80127820 nsDelhi::nsGlobal::OtherDataSingleMode::set_target_zone_data  # hle_game.c: starting in a zone for testing

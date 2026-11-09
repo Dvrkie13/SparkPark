@@ -19,9 +19,11 @@
  *     shake it from side to side to recover;
  *   steering (Gyarados, Empoleon): held sideways, tilted left and right
  *     by left/right (A/D, arrows) or the left stick, in proportion;
- *   flying and rolling (Pelipper, Salamence, Rhyperior, Rayquaza): also
- *     tilted forward and back, by up/down or the stick: up tilts it back
- *     (climb), down forward (dive);
+ *   flying (Pelipper, Salamence, Rayquaza): also tilted forward and back,
+ *     by up/down or the stick: up tilts it back (climb), down forward
+ *     (dive);
+ *   rolling (Rhyperior): the same, the other way: up tilts it forward,
+ *     as the game goes up the screen for that;
  *   pointing (Rotom, Rayquaza's last part): the mouse or the right stick
  *     moves the pointer, as two sensor-bar dots in the IR camera; past
  *     the screen's sides it turns Rotom's view.
@@ -45,7 +47,7 @@ void (*g_host_sticks_read)(float* lx, float* ly, float* rx, float* ry);
 #define PI 3.14159265f
 
 enum { HOLD_SIDEWAYS, HOLD_UPRIGHT };
-enum { USE_SHAKE = 1, USE_STEER = 2, USE_PITCH = 4, USE_SWING = 8, USE_PUSH = 16, USE_BAT = 32, USE_POINTER = 64 };
+enum { USE_SHAKE = 1, USE_STEER = 2, USE_PITCH = 4, USE_SWING = 8, USE_PUSH = 16, USE_BAT = 32, USE_POINTER = 64, USE_PITCH_ROLL = 128 };
 
 static const struct {
     int at, hold, use;
@@ -59,7 +61,7 @@ static const struct {
     {7, HOLD_SIDEWAYS, USE_STEER | USE_PITCH},              /* Pelipper's Circle Circuit */
     {9, HOLD_SIDEWAYS, USE_STEER},                          /* Empoleon's Snow Slide */
     {10, HOLD_SIDEWAYS, 0},                                 /* Bastiodon's Panel Crush: buttons */
-    {11, HOLD_SIDEWAYS, USE_STEER | USE_PITCH},             /* Rhyperior's Bumper Burn */
+    {11, HOLD_SIDEWAYS, USE_STEER | USE_PITCH | USE_PITCH_ROLL}, /* Rhyperior's Bumper Burn */
     {12, HOLD_UPRIGHT, USE_BAT | USE_SHAKE},                /* Blaziken's Boulder Bash */
     {13, HOLD_SIDEWAYS, USE_POINTER | USE_SHAKE},           /* Rotom's Spooky Shoot-'em-Up */
     {15, HOLD_SIDEWAYS, USE_STEER | USE_PITCH},             /* Salamence's Air Race */
@@ -178,6 +180,7 @@ int hle_motion(uint32_t held, uint32_t report, int16_t acc[3], int16_t dots[4][2
         /* Up climbs: the remote tilted back. */
         wantPitch = key_pair(&upDown, held, HOST_PAD_SCREEN_DOWN, HOST_PAD_SCREEN_UP);
         if (ly != 0) wantPitch = -ly;
+        if (use & USE_PITCH_ROLL) wantPitch = -wantPitch;
         if (flip("RECOMP_TILT_FLIP", "fb")) wantPitch = -wantPitch;
     }
     steer += (wantSteer * MAX_STEER - steer) * EASE;

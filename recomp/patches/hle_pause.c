@@ -47,6 +47,112 @@ void f_80222E00(ppc_t* c) {
 
 int hle_file_select_shown(void) { return sArcadeDrawn && ppc_timebase() - sArcadeDrawn < PPC_TB_HZ / 8; }
 
+/* The password screen is mnStartMenu's script waiting at one place, and the
+ * Unlock all button drawn on it (options.c) goes the way a password does, so
+ * the game checks it, says so and saves: the eight wheels are set to the
+ * first password and its button pressed. When the script asks whether that
+ * one was used, the file it asks about has the other six set, with the same
+ * calls the script uses, and the first cleared, for it to go through. The
+ * game has only one reward's message, with its picture: once that one's
+ * given, its kind in the script is changed for the wait for the message,
+ * for the one with no picture, "incorrect", and hle_text.c words that. */
+#define PASSWORD_CODES 0x348 /* in the script; the seven, disguised */
+#define PASSWORD_KINDS 0x380
+#define PASSWORD_WHEELS 0x4510
+#define PASSWORD_WAITING 0x47FC
+#define FIRST_PASSWORD_CODE 76753
+#define SET_FLAG 17
+#define IS_ITEM_SET 18
+#define SET_ITEM 19
+#define GLOBAL_SET_ITEM 181
+
+static const uint32_t kPasswordItems[] = {2, 3}; /* the first password gives item 0 */
+static const uint32_t kPasswordFlags[] = {159, 164, 165, 166};
+static uint64_t sPasswordShown; /* when, on the time base */
+static int sUnlockAsked, sUnlockPress, sUnlocking;
+static uint32_t sScriptCode;
+static int sUnlockedNext, sUnlockedSaying;
+
+int hle_password_screen_shown(void) { return sPasswordShown && ppc_timebase() - sPasswordShown < PPC_TB_HZ / 8; }
+
+void hle_password_unlock_all(void) {
+    if (hle_password_screen_shown()) sUnlockAsked = 1;
+}
+
+int hle_password_unlock_saying(void) { return sUnlockedSaying; }
+
+int hle_password_press(void) {
+    if (!sUnlockPress) return 0;
+    sUnlockPress--;
+    return 1;
+}
+
+/* void fscript::Run(fscript*): a script, up to where it waits for the next
+ * frame. Where it's got to is at +0, and its code at +0x14. */
+void f_802EE5D0(ppc_t* c) {
+    uint32_t script = c->r[3], code;
+    int i;
+    f_802EE5D0_orig(c);
+    code = LD32(script + 0x14);
+    if (!code || LD32(script) != code + PASSWORD_WAITING || LD32(code + PASSWORD_CODES) != FIRST_PASSWORD_CODE)
+        return;
+    sPasswordShown = ppc_timebase();
+    if (sUnlockedSaying) {
+        sUnlockedSaying = 0;
+        ST32(code + PASSWORD_KINDS, 1);
+    }
+    if (!sUnlockAsked) return;
+    sUnlockAsked = 0;
+    for (i = 0; i < 8; i++) ST32(code + PASSWORD_WHEELS + 4 * i, "02970626"[i] - '0');
+    sScriptCode = code;
+    sUnlocking = 1;
+    sUnlockPress = 6;
+}
+
+/* Calls a script call, its arguments on the guest's stack. */
+static void script_call(ppc_t* c, ppc_func fn, uint32_t self, uint32_t id, uint32_t a0, uint32_t a1, uint32_t a2) {
+    uint32_t sp = c->r[1];
+    c->r[1] = (sp - 0x40) & ~7u;
+    ST32(c->r[1] + 0x10, a0);
+    ST32(c->r[1] + 0x14, a1);
+    ST32(c->r[1] + 0x18, a2);
+    c->r[3] = self;
+    c->r[4] = id;
+    c->r[5] = c->r[1] + 0x10;
+    fn(c);
+    c->r[1] = sp;
+}
+
+/* int MenuScriptStartMenu::syscall0x15(u32 id, Value* args) */
+void f_80125F70(ppc_t* c) {
+    uint32_t id = c->r[4];
+    if (sUnlocking && id == IS_ITEM_SET) {
+        uint32_t menu = c->r[3], args = c->r[5], lr = c->lr, file = LD32(args), global;
+        int i;
+        sUnlocking = 0;
+        f_8002E840(c);
+        global = c->r[3];
+        for (i = 0; i < 4; i++) script_call(c, f_80125F70_orig, menu, SET_FLAG, file, kPasswordFlags[i], 1);
+        for (i = 0; i < 2; i++) {
+            script_call(c, f_80125F70_orig, menu, SET_ITEM, file, kPasswordItems[i], 1);
+            script_call(c, f_801827C0, global, GLOBAL_SET_ITEM, kPasswordItems[i], 1, 0);
+        }
+        script_call(c, f_80125F70_orig, menu, SET_ITEM, file, 0, 0);
+        HLE_LOG("passwords: file %u unlocked", file);
+        c->r[3] = menu;
+        c->r[4] = IS_ITEM_SET;
+        c->r[5] = args;
+        c->lr = lr;
+        sUnlockedNext = 1;
+    }
+    f_80125F70_orig(c);
+    if (sUnlockedNext && id == SET_ITEM) {
+        sUnlockedNext = 0;
+        sUnlockedSaying = 1;
+        ST32(sScriptCode + PASSWORD_KINDS, 2);
+    }
+}
+
 /* ------------------------------------------------------------------------ */
 /* Pictures */
 
@@ -111,8 +217,9 @@ static uint32_t palette_of(uint32_t tex) {
     return 0;
 }
 
-/* Decodes I4, I8, CI4, CI8 and CMPR, the formats the Pad uses. */
-static uint32_t* decode(uint32_t tex, int* pw, int* ph) {
+/* Decodes I4, I8, CI4, CI8 and CMPR, the formats the Pad uses (and the
+ * friends list, hle_friends.c). */
+uint32_t* hle_pause_decode(uint32_t tex, int* pw, int* ph) {
     int w = LD16(tex + 0x1C), h = LD16(tex + 0x1E), fmt = (int)LD32(tex + 0x20), bw, bh, tx, ty, x, y;
     uint32_t data = tex + LD32(tex + 0x10), plt = 0, pal = 0, *out;
     uint32_t colours[256];
@@ -214,7 +321,7 @@ static const uint32_t* image(const char* name, int* w, int* h) {
     if (i == WANTED) return NULL;
     if (!sTex[i].tex) find_loaded();
     if (!sTex[i].tex || LD32(sTex[i].tex) != 0x54455830) return NULL;
-    if (!sTex[i].argb) sTex[i].argb = decode(sTex[i].tex, &sTex[i].w, &sTex[i].h);
+    if (!sTex[i].argb) sTex[i].argb = hle_pause_decode(sTex[i].tex, &sTex[i].w, &sTex[i].h);
     *w = sTex[i].w;
     *h = sTex[i].h;
     return sTex[i].argb;

@@ -58,6 +58,11 @@ static void flush_batch(void);
 /* Set when anything build_state reads may have changed: draws in between
  * reuse the state built last. */
 static int sStateDirty = 1;
+/* hle_gx.c marks the draws of the layer the minimap is drawn in (with
+ * the berry counter in the park, and on menus the menu): those whose
+ * origin lands in the minimap's corner, from its map on, are the
+ * minimap's (GXDrawState's screen 1). */
+static int sScreenMarked, sMapDrawn;
 
 static void xf_write(uint32_t addr, uint32_t value) {
     int i;
@@ -547,6 +552,7 @@ typedef struct CopyTex {
     int bytes;        /* size of the copy in guest memory */
     uint32_t mem_hash; /* of that memory when the copy was made */
     uint64_t checked;  /* frame its memory was last checked in, plus 1 */
+    uint64_t made;     /* frame it was last made in, plus 1 */
 } CopyTex;
 static CopyTex sCopies[64];
 static int sCopyCount;
@@ -571,8 +577,12 @@ static int copy_still_valid(CopyTex* t) {
     return 1;
 }
 
-void gx_register_copy(uint32_t addr, uint32_t handle, int width, int height, int fmt) {
-    int i;
+/* Registers a copy; returns 1 if it should go to guest memory too: when
+ * it wasn't also made the frame before. The game's CPU reads such copies
+ * (a photo, saved as a JPEG); the ones made every frame (reflections,
+ * blur) only the GPU samples, and reading those back would hold it up. */
+int gx_register_copy(uint32_t addr, uint32_t handle, int width, int height, int fmt) {
+    int i, again;
     if (getenv("RECOMP_GX_COPY_LOG")) {
         static uint32_t seen[256];
         static int nseen;
@@ -587,10 +597,12 @@ void gx_register_copy(uint32_t addr, uint32_t handle, int width, int height, int
     for (i = 0; i < sCopyCount; i++) {
         if (sCopies[i].addr == addr) break;
     }
+    again = i < sCopyCount && sCopies[i].made >= sFrame; /* this frame or the last */
     if (i == sCopyCount) {
         if (sCopyCount == 64) i = 0;
         else sCopyCount++;
     }
+    sCopies[i].made = sFrame + 1;
     sCopies[i].addr = addr;
     sCopies[i].handle = handle;
     sCopies[i].width = width;
@@ -599,6 +611,25 @@ void gx_register_copy(uint32_t addr, uint32_t handle, int width, int height, int
     sCopies[i].mem_hash = sCopies[i].bytes > 0 ? hash_bytes(MA(addr), sCopies[i].bytes) : 0;
     sCopies[i].checked = sFrame + 1;
     sStateDirty = 1; /* draws sampling addr now get the copy */
+    return !again;
+}
+
+/* Puts the copy to addr, as read back (w x h RGBA8), into guest memory in
+ * its format, unless the game has written there since it was made (the
+ * memory is something else now) and the game hasn't asked for it (force).
+ * It stays the copy for draws. */
+void gx_copy_write_back(uint32_t addr, int fmt, int intensity, int w, int h, int stride, const uint8_t* rgba, int force) {
+    int i;
+    for (i = 0; i < sCopyCount && sCopies[i].addr != addr; i++) {}
+    if (!force) {
+        if (i == sCopyCount || sCopies[i].bytes <= 0) return;
+        if (hash_bytes(MA(addr), sCopies[i].bytes) != sCopies[i].mem_hash) return;
+    }
+    gx_encode_copy(MA(addr), fmt, intensity, w, h, stride, rgba);
+    if (i < sCopyCount && sCopies[i].bytes > 0) sCopies[i].mem_hash = hash_bytes(MA(addr), sCopies[i].bytes);
+    if (getenv("RECOMP_GX_COPY_LOG"))
+        fprintf(stderr, "gx: EFB copy %08X %dx%d fmt %d written to memory (frame %llu)\n", addr, w, h, fmt,
+                (unsigned long long)sFrame);
 }
 
 /* Saves w x h RGBA pixels as a 32-bit BMP, top row first. */
@@ -759,6 +790,15 @@ static uint32_t texture_for_map(int map) {
     return e->handle;
 }
 
+/* A fog register's float: 11 bits of mantissa, 8 of exponent and a sign,
+ * a float's top 20 bits. */
+static float fog_float(uint32_t r) {
+    uint32_t bits = ((r >> 19) & 1) << 31 | ((r >> 11) & 0xFF) << 23 | (r & 0x7FF) << 12;
+    float f;
+    memcpy(&f, &bits, 4);
+    return f;
+}
+
 static void build_state(GXDrawState* st) {
     uint32_t genmode = bp[0x00], ac = bp[0xF3], blend = bp[0x41], zmode = bp[0x40];
     int i, k;
@@ -808,6 +848,34 @@ static void build_state(GXDrawState* st) {
             st->konst[i][k] = tev_konst[i][k] / 255.0f;
         }
     }
+    st->ind_stages = (int)((genmode >> 16) & 7);
+    for (i = 0; i < st->num_stages; i++) {
+        st->ind_cmd[i] = bp[0x10 + i] & 0x1FFFFF;
+        if (st->ind_cmd[i]) st->ind_any = 1;
+    }
+    if (st->ind_any) {
+        for (i = 0; i < 4; i++) {
+            uint32_t ss = bp[0x25 + i / 2] >> ((i & 1) * 8);
+            st->ind_map[i] = (int)((bp[0x27] >> (6 * i)) & 7);
+            st->ind_coord[i] = (int)((bp[0x27] >> (6 * i + 3)) & 7);
+            st->ind_scale[i][0] = (int)(ss & 15);
+            st->ind_scale[i][1] = (int)((ss >> 4) & 15);
+            if (i < st->ind_stages && !st->texture[st->ind_map[i]]) st->texture[st->ind_map[i]] = texture_for_map(st->ind_map[i]);
+        }
+        for (i = 0; i < 3; i++) {
+            uint32_t a = bp[0x06 + 3 * i], b = bp[0x07 + 3 * i], c = bp[0x08 + 3 * i];
+            const uint32_t col[3] = {a, b, c};
+            for (k = 0; k < 3; k++) {
+                st->ind_mtx[i][0][k] = (int)(col[k] << 21) >> 21;
+                st->ind_mtx[i][1][k] = (int)((col[k] >> 11) << 21) >> 21;
+            }
+            st->ind_mtx_scale[i] = (int)(((a >> 22) & 3) | ((b >> 22) & 3) << 2 | ((c >> 22) & 3) << 4);
+        }
+        for (i = 0; i < 8; i++) {
+            st->tc_size[i][0] = (int)(bp[0x30 + 2 * i] & 0xFFFF) + 1;
+            st->tc_size[i][1] = (int)(bp[0x31 + 2 * i] & 0xFFFF) + 1;
+        }
+    }
     for (i = 0; i < st->num_stages; i++) {
         const GXTevStage* s = &st->stage[i];
         if (s->tex_enable && !st->texture[s->texmap]) st->texture[s->texmap] = texture_for_map(s->texmap);
@@ -829,6 +897,20 @@ static void build_state(GXDrawState* st) {
     st->z_func = (zmode >> 1) & 7;
     st->z_update = (zmode >> 4) & 1;
     st->efb_alpha = (bp[0x43] & 7) == 1;
+    st->fog_type = (bp[0xF1] >> 21) & 7;
+    st->fog_ortho = (bp[0xF1] >> 20) & 1;
+    st->fog_a = fog_float(bp[0xEE]);
+    st->fog_b_mag = (int)(bp[0xEF] & 0xFFFFFF);
+    st->fog_b_shift = (int)(bp[0xF0] & 31);
+    st->fog_c = fog_float(bp[0xF1]);
+    st->fog_color[0] = ((bp[0xF2] >> 16) & 0xFF) / 255.0f;
+    st->fog_color[1] = ((bp[0xF2] >> 8) & 0xFF) / 255.0f;
+    st->fog_color[2] = (bp[0xF2] & 0xFF) / 255.0f;
+    st->fog_range = st->fog_type && ((bp[0xE8] >> 10) & 1);
+    if (st->fog_range) {
+        st->fog_center = (float)(bp[0xE8] & 0x3FF) - 342.0f;
+        for (i = 0; i < 10; i++) st->fog_k[i] = (float)((bp[0xE9 + i / 2] >> (12 * (i & 1))) & 0xFFF) / 256.0f;
+    }
     st->cull_mode = (genmode >> 14) & 3;
     {
         float wd = xf_float(0x101A), ht = xf_float(0x101B), zr = xf_float(0x101C);
@@ -947,6 +1029,13 @@ static uint32_t sDisplayList, sListDraws;
  * there from frame to frame (list_begin). */
 static int sArena;
 
+/* The frame's vertices so far, for drawing what's been recorded of it
+ * (gxb_copy_sync, while frames are recorded). */
+void gx_frame_data_so_far(void) {
+    flush_batch();
+    if (sKeepFrame) gxb_frame_data(sArena ? NULL : sBatch, sBatchVerts, sIndex, sIndexCount);
+}
+
 static void flush_batch(void) {
     if (sIndexCount == sIndexFirst) return;
     if (sArena) gxb_draw_triangles(&sBatchState, NULL, 0, 0, sIndex, sIndexFirst, sIndexCount - sIndexFirst);
@@ -961,16 +1050,75 @@ static void flush_batch(void) {
     }
 }
 
+/* Whether the position matrix (XF's, not the vertices') puts its origin
+ * in the minimap's corner of the screen. */
+static int origin_in_minimap(const GXDrawState* st) {
+    uint32_t m = (xf[0x1018] & 63) * 4;
+    float tx = xf_float(m + 3), ty = xf_float(m + 7), tz = xf_float(m + 11), x, y;
+    if (xf[0x1026]) { /* orthographic */
+        x = xf_float(0x1020) * tx + xf_float(0x1021);
+        y = xf_float(0x1022) * ty + xf_float(0x1023);
+    } else {
+        if (tz >= 0) return 0;
+        x = (xf_float(0x1020) * tx + xf_float(0x1021) * tz) / -tz;
+        y = (xf_float(0x1022) * ty + xf_float(0x1023) * tz) / -tz;
+    }
+    x = st->viewport[0] + (x + 1) * 0.5f * st->viewport[2];
+    y = st->viewport[1] + (1 - y) * 0.5f * st->viewport[3];
+    return x >= kGxMinimapRect[0] && x < kGxMinimapRect[2] && y >= kGxMinimapRect[1] && y < kGxMinimapRect[3];
+}
+
+/* Whether a guest physical address has n bytes of memory from it. */
+static int phys_ok(uint32_t a, uint32_t n) {
+    return a + n <= 0x01800000u || (a >= 0x10000000u && a + n <= 0x14000000u);
+}
+
+/* Whether texture map 0's image is a minimap's map: a texture named
+ * Fdm<area>, its TEX0 header just before it. */
+static int sMapArea, sMapZone; /* from the map's name: FdmAr02Zn01 */
+
+/* Where the minimap last drawn was of: area (0 if none yet) and zone. */
+int gx_minimap_place(int* zone) {
+    *zone = sMapZone;
+    return sMapArea;
+}
+
+static int texture_is_map(void) {
+    static uint32_t last = ~0u;
+    static int was;
+    uint32_t a = (bp[0x94] & 0xFFFFFFu) << 5, h = a - 0x40, name;
+    if (a == last) return was;
+    last = a;
+    was = 0;
+    if (!phys_ok(h, 0x40) || memcmp(g_mem + h, "TEX0", 4) != 0) return 0;
+    name = h + rd32(g_mem + h + 0x14);
+    was = phys_ok(name, 12) && memcmp(g_mem + name, "Fdm", 3) == 0;
+    if (was && memcmp(g_mem + name + 3, "Ar", 2) == 0 && memcmp(g_mem + name + 7, "Zn", 2) == 0) {
+        const uint8_t* n = g_mem + name;
+        sMapArea = (n[5] - '0') * 10 + (n[6] - '0');
+        sMapZone = (n[9] - '0') * 10 + (n[10] - '0');
+    }
+    return was;
+}
+
 /* Makes the batch one drawn with the current state, drawing the pending
  * one first if its state differs. */
 static void use_current_state(int mtx_per_vertex) {
-    int rebuilt = sStateDirty;
+    int rebuilt = sStateDirty, screen;
     if (rebuilt) {
         build_state(&sState); /* may draw the pending batch, if a texture changes */
         sStateDirty = 0;
     }
-    if (sState.mtx_per_vertex != mtx_per_vertex) {
+    screen = 0;
+    /* The map's own pieces wherever their origin is (a zone's map can be
+     * several, the Beach's), and what's drawn on it once it has been. */
+    if (sScreenMarked && !(mtx_per_vertex & 1)) {
+        if (texture_is_map()) sMapDrawn = screen = 1;
+        else if (origin_in_minimap(&sState)) screen = sMapDrawn;
+    }
+    if (sState.mtx_per_vertex != mtx_per_vertex || sState.screen != screen) {
         sState.mtx_per_vertex = mtx_per_vertex;
+        sState.screen = screen;
         rebuilt = 1;
     }
     /* Everything but the XF fields, which build_state leaves zero. A
@@ -1487,7 +1635,7 @@ static void efb_copy(uint32_t exec) {
         sStateDirty = 1; /* textures are checked again each frame */
     } else {
         int fmt = (int)(((exec >> 4) & 7) | (((exec >> 3) & 1) << 3));
-        gxb_copy_to_texture(dst, x, y, w, h, fmt, (exec >> 15) & 1, (bp[0x43] & 7) == 1);
+        gxb_copy_to_texture(dst, x, y, w, h, fmt, (exec >> 15) & 1, (bp[0x43] & 7) == 1, (int)(bp[0x4D] & 0x3FF) * 32);
     }
     if (clear) {
         uint32_t rgba = ((bp[0x4F] & 0xFF) << 24) | (((bp[0x50] >> 8) & 0xFF) << 16) | ((bp[0x50] & 0xFF) << 8) |
@@ -1535,6 +1683,10 @@ static size_t run(const uint8_t* p, size_t len, int depth, size_t* need) {
         } else if (op == 0x08) {
             if (left < 6) { *need = 6; break; }
             cp[c[1]] = rd32(c + 2);
+            if (c[1] == 0xF0) { /* not the GPU's: hle_gx.c's mark */
+                sScreenMarked = (int)cp[0xF0];
+                sMapDrawn = 0;
+            }
             if (c[1] == 0x30) xf_write(0x1018, cp[0x30]);
             if (c[1] == 0x40) xf_write(0x1019, cp[0x40]);
             pos += 6;
@@ -1619,5 +1771,6 @@ void gx_init(void) {
     sArena = gxb_arena() && !(v && *v == '0') && !getenv("RECOMP_GX_SKIP");
     g_wgpipe_write = fifo_append;
     g_gx_flush = gx_flush;
+    g_gx_copy_sync = gxb_copy_sync;
     sReady = 1;
 }

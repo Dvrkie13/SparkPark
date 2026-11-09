@@ -38,6 +38,9 @@ typedef struct GXTevStage {
     uint8_t ras_swap, tex_swap;
 } GXTevStage;
 
+/* Where the minimap is on the game's screen, in EFB pixels: x0, y0, x1, y1. */
+static const float kGxMinimapRect[4] = {456, 255, 597, 431};
+
 /* Everything the backend needs to draw with the current state. */
 typedef struct GXDrawState {
     int num_stages;
@@ -55,10 +58,36 @@ typedef struct GXDrawState {
     float viewport[6];     /* x, y, width, height, near, far in EFB pixels */
     int scissor[4];        /* x0, y0, x1, y1 */
     int efb_alpha;         /* the EFB pixel format has an alpha channel (RGBA6_Z24) */
+    /* Fog (BP 0xEE-0xF2): its kind (0 none, 2 linear, 4 exp, 5 exp2,
+     * 6 backward exp, 7 backward exp2), orthographic or not, and from a
+     * pixel's 24-bit depth z its distance ze, a 2^24 / (b_mag - (z >>
+     * b_shift)) (orthographic: a z / 2^24), whose part past c is fogged. */
+    int fog_type, fog_ortho, fog_b_mag, fog_b_shift;
+    float fog_a, fog_c, fog_color[3];
+    /* Fog range adjustment (BP 0xE8-0xED), if fog_range: a pixel |dx| EFB
+     * pixels from column fog_center has its distance divided by fog_k
+     * (cosines) at |dx| / 32 - 1, 1 nearer than 32, linear between. */
+    int fog_range;
+    float fog_center, fog_k[10];
+    /* Indirect texturing (BP 0x06-0x27): ind_any if a TEV stage has an
+     * indirect command (ind_cmd, BP 0x10 on, raw). Indirect stage i reads
+     * texture map ind_map[i] at coordinate ind_coord[i], shifted right by
+     * ind_scale[i]; matrix m is two rows of S0.10 ints, scaled by 2 to
+     * the power ind_mtx_scale[m] - 17. Coordinates are in texels with 7
+     * fractional bits, by tc_size (BP 0x30 on: each texture coordinate's
+     * size in texels). */
+    int ind_stages, ind_any;
+    uint32_t ind_cmd[16];
+    int ind_map[4], ind_coord[4], ind_scale[4][2];
+    int ind_mtx[3][2][3], ind_mtx_scale[3];
+    int tc_size[8][2];
     /* The matrix indices the vertices carry (bit 0 the position's, bit 1
      * texture coordinates'); the rest are XF's MATINDEX registers' alike
      * for every vertex. */
     int mtx_per_vertex;
+    /* What the draw is of: 0 the game's picture, 1 the minimap, which a
+     * second screen shows (gx_fifo.c). */
+    int screen;
     const uint32_t* xf;    /* GX_XF_WORDS words, laid out as above */
     int xf_dirty_lo, xf_dirty_hi; /* words changed since the last draw (lo >= hi: none) */
     /* What the batch draws, the same from frame to frame (its display
@@ -112,12 +141,15 @@ void gxb_clear(int color, int alpha, int depth, uint32_t rgba, uint32_t z);
 /* Copies an EFB rectangle to a texture, converted to copy format `fmt`
  * (exec bits 3-6) and stored as the game reads it back: an I8 copy as
  * intensity in every channel, an RGB565 copy with opaque alpha. */
-void gxb_copy_to_texture(uint32_t addr, int x, int y, int w, int h, int fmt, int intensity, int efb_alpha);
+void gxb_copy_to_texture(uint32_t addr, int x, int y, int w, int h, int fmt, int intensity, int efb_alpha, int stride);
 /* Shows the EFB rectangle the game copied to the XFB. */
 void gxb_present(int x, int y, int w, int h);
 
 /* Texture decoding (gx_texture.c). Output is RGBA8, row-major. */
 int gx_texture_size(int fmt, int width, int height);
+void gxb_copy_sync(uint32_t addr);
+void gx_frame_data_so_far(void);
+void gx_encode_copy(uint8_t* dst, int fmt, int intensity, int w, int h, int stride, const uint8_t* rgba);
 void gx_decode_texture(uint8_t* out, const uint8_t* src, int fmt, int width, int height,
                        const uint8_t* tlut, int tlut_fmt);
 /* The smallest of the layouts in `allowed` (bits, 1 << GX_PIX_...) that

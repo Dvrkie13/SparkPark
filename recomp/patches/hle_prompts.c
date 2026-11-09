@@ -176,10 +176,11 @@ int hle_font_glyph(uint16_t code, uint8_t* cov, int* left, int* advance) {
  * Next") draws its buttons from a texture named KeyButton (256x256, 8-bit
  * colour indices into RGB5A3 colours) in each menu's model (lobbies, start
  * menu, pause, photos); the bubble over Pikachu's head ("2 Talk", "2 Pick
- * Up", "2 Check") from FukidashiMini (256x128) in the field menu's. Each
- * button there is redrawn as the icon for what is bound to it, in the
+ * Up", "2 Check") from FukidashiMini (256x128) in the field menu's; the
+ * title screen's "Please Press 2" is TitleParts (512x128). Each button
+ * there is redrawn as the icon for what is bound to it, in the
  * colours the texture has: a white key, outlined in the button's own
- * colour (the bar's, a coloured ring) or dark grey (the bubble's, all
+ * colour (the bar's, a coloured ring) or dark grey (the others, all
  * greys), with a white edge, as the words beside it are drawn. */
 
 #define MAX_COLOURS 256
@@ -199,6 +200,9 @@ static const Spot kBarSpots[] = {
 static const Spot kBubbleSpots[] = {
     {10, 39, 36, 67, HOST_PAD_2}, {18, 69, 44, 97, HOST_PAD_2}, {9, 99, 35, 127, HOST_PAD_2}, /* with their glow */
 };
+static const Spot kTitleSpots[] = {
+    {296, 2, 331, 37, HOST_PAD_2},
+};
 
 static const struct Kind {
     const char* name;
@@ -209,6 +213,7 @@ static const struct Kind {
 } kKinds[] = {
     {"KeyButton", 256, 256, kBarSpots, (int)(sizeof(kBarSpots) / sizeof(kBarSpots[0])), ~0u},
     {"FukidashiMini", 256, 128, kBubbleSpots, (int)(sizeof(kBubbleSpots) / sizeof(kBubbleSpots[0])), 0x414141},
+    {"TitleParts", 512, 128, kTitleSpots, (int)(sizeof(kTitleSpots) / sizeof(kTitleSpots[0])), 0x414141},
 };
 #define KINDS ((int)(sizeof(kKinds) / sizeof(kKinds[0])))
 

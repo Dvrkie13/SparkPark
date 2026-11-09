@@ -272,12 +272,34 @@ static const char* kFragmentShader =
     "uniform ivec4 u_swap[4];\n"
     "uniform ivec4 u_alpha;\n"
     "uniform vec4 u_alpha_ref;\n"
+    "uniform ivec4 u_fog; /* kind, orthographic, b's magnitude and shift (gx.h) */\n"
+    "uniform vec4 u_fogf; /* a, c */\n"
+    "uniform vec4 u_fog_color;\n"
+    "uniform vec4 u_fog_range[4]; /* the offset from the center as x a + b, on; ten cosines */\n"
+    "/* Indirect texturing (gx.h): the indirect stages and whether any stage is\n"
+    " * indirect; each stage's command; the indirect stages' maps, coordinates\n"
+    " * and scales; the matrices' rows, each with its shift; the coordinates'\n"
+    " * sizes, two to a vector. */\n"
+    "uniform ivec4 u_ind, u_ind_cmd[4], u_ind_stage[4], u_ind_mtx[6], u_tc_size[4];\n"
     "vec4 sample_map(int m, vec2 uv) {\n"
     "  if (m == 0) return texture(u_tex0, uv); if (m == 1) return texture(u_tex1, uv);\n"
     "  if (m == 2) return texture(u_tex2, uv); if (m == 3) return texture(u_tex3, uv);\n"
     "  if (m == 4) return texture(u_tex4, uv); if (m == 5) return texture(u_tex5, uv);\n"
     "  if (m == 6) return texture(u_tex6, uv); return texture(u_tex7, uv);\n"
     "}\n"
+    "ivec2 map_size(int m) {\n"
+    "  if (m == 0) return textureSize(u_tex0, 0); if (m == 1) return textureSize(u_tex1, 0);\n"
+    "  if (m == 2) return textureSize(u_tex2, 0); if (m == 3) return textureSize(u_tex3, 0);\n"
+    "  if (m == 4) return textureSize(u_tex4, 0); if (m == 5) return textureSize(u_tex5, 0);\n"
+    "  if (m == 6) return textureSize(u_tex6, 0); return textureSize(u_tex7, 0);\n"
+    "}\n"
+    "/* A map sampled at a coordinate in texels with 7 fractional bits. */\n"
+    "vec4 sample_at(int m, ivec2 c) { return sample_map(m, vec2(c) / (vec2(map_size(m)) * 128.0)); }\n"
+    "ivec2 fixpoint_uv(int n) {\n"
+    "  vec3 tc = v_tex[n]; ivec4 sz = u_tc_size[n >> 1];\n"
+    "  return ivec2(tc.xy / (tc.z == 0.0 ? 1.0 : tc.z) * vec2((n & 1) != 0 ? sz.zw : sz.xy) * 128.0);\n"
+    "}\n"
+    "int wrap(int v, int w) { return w == 0 ? v : (w == 6 ? 0 : v & ((256 >> (w - 1)) * 128 - 1)); }\n"
     "vec4 swizzle(vec4 c, int t) { ivec4 s = u_swap[t]; return vec4(c[s.x], c[s.y], c[s.z], c[s.w]); }\n"
     "float kfrac(int s) { return s < 8 ? float(8 - s) / 8.0 : 0.0; }\n"
     "vec3 kcolor(int s) {\n"
@@ -301,12 +323,48 @@ static const char* kFragmentShader =
     "void main() {\n"
     "  vec4 reg[4]; reg[0] = u_reg[0]; reg[1] = u_reg[1]; reg[2] = u_reg[2]; reg[3] = u_reg[3];\n"
     "  vec4 last = reg[0];\n"
+    "  ivec3 ind_tex[4]; ivec2 ind_coord = ivec2(0);\n"
+    "  if (u_ind.y != 0) {\n"
+    "    for (int k = 0; k < u_ind.x && k < 4; k++) {\n"
+    "      ivec4 is = u_ind_stage[k];\n"
+    "      ind_tex[k] = ivec3(floor(sample_at(is.x, fixpoint_uv(is.y) >> is.zw).abg * 255.0 + 0.5));\n"
+    "    }\n"
+    "  }\n"
     "  for (int i = 0; i < u_num_stages; i++) {\n"
     "    ivec4 map = u_map[i]; ivec4 sel = u_sel[i];\n"
+    "    int cmd = u_ind.y != 0 ? u_ind_cmd[i >> 2][i & 3] : 0, bump = 0;\n"
+    "    if (cmd != 0) {\n"
+    "      /* As gx.frag's indirect: the indirect stage's texel offsets the coordinate. */\n"
+    "      int bt = cmd & 3, fmt = (cmd >> 2) & 3, bias = (cmd >> 4) & 7, bs = (cmd >> 7) & 3, mid = (cmd >> 9) & 15;\n"
+    "      ivec2 uv = fixpoint_uv(map.y), trans = ivec2(0);\n"
+    "      if (bt < u_ind.x && (bs != 0 || mid != 0)) {\n"
+    "        ivec3 crd = ind_tex[bt];\n"
+    "        if (bs != 0) bump = crd[bs - 1] & (fmt == 1 ? 0xE0 : (fmt == 2 ? 0xF0 : 0xF8));\n"
+    "        crd &= ivec3(fmt == 0 ? 255 : (fmt == 1 ? 31 : (fmt == 2 ? 15 : 7)));\n"
+    "        int add = fmt == 0 ? -128 : 1;\n"
+    "        crd += ivec3((bias & 1) != 0 ? add : 0, (bias & 2) != 0 ? add : 0, (bias & 4) != 0 ? add : 0);\n"
+    "        int m = (mid & 3) - 1;\n"
+    "        if (m >= 0) {\n"
+    "          ivec4 a = u_ind_mtx[2 * m], b = u_ind_mtx[2 * m + 1];\n"
+    "          if ((mid >> 2) == 0) trans = ivec2(a.x * crd.x + a.y * crd.y + a.z * crd.z, b.x * crd.x + b.y * crd.y + b.z * crd.z) >> 3;\n"
+    "          else if ((mid >> 2) == 1) trans = (uv * crd.x) >> 8;\n"
+    "          else trans = (uv * crd.y) >> 8;\n"
+    "          trans = a.w >= 0 ? trans >> a.w : trans << -a.w;\n"
+    "        }\n"
+    "      }\n"
+    "      ivec2 c = ivec2(wrap(uv.x, (cmd >> 13) & 7), wrap(uv.y, (cmd >> 16) & 7)) + trans;\n"
+    "      ind_coord = ((cmd >> 20) & 1) != 0 ? ind_coord + c : c;\n"
+    "      ind_coord = (ind_coord << 8) >> 8;\n"
+    "    }\n"
     "    vec4 tex = vec4(1.0);\n"
-    "    if (map.z != 0) { vec3 tc = v_tex[map.y]; tex = sample_map(map.x, tc.xy / (tc.z == 0.0 ? 1.0 : tc.z)); }\n"
+    "    if (map.z != 0) {\n"
+    "      if (cmd != 0) tex = sample_at(map.x, ind_coord);\n"
+    "      else { vec3 tc = v_tex[map.y]; tex = sample_map(map.x, tc.xy / (tc.z == 0.0 ? 1.0 : tc.z)); }\n"
+    "    }\n"
     "    tex = swizzle(tex, sel.w & 3);\n"
     "    vec4 ras = map.w == 0 ? v_col0 : (map.w == 1 ? v_col1 : vec4(0.0));\n"
+    "    if (map.w == 5) ras = vec4(0.0, 0.0, 0.0, float(bump) / 255.0);\n"
+    "    else if (map.w == 6) ras = vec4(0.0, 0.0, 0.0, float(bump | (bump >> 5)) / 255.0);\n"
     "    ras = swizzle(ras, sel.w >> 2);\n"
     "    vec3 kc = kcolor(sel.z & 31); float ka = kalpha(sel.z >> 5);\n"
     "    vec3 cin[16];\n"
@@ -357,11 +415,29 @@ static const char* kFragmentShader =
     "  bool p0 = acmp(u_alpha.x, a8, u_alpha_ref.x), p1 = acmp(u_alpha.y, a8, u_alpha_ref.y);\n"
     "  bool pass = u_alpha.z == 0 ? (p0 && p1) : (u_alpha.z == 1 ? (p0 || p1) : (u_alpha.z == 2 ? (p0 != p1) : (p0 == p1)));\n"
     "  if (!pass) discard;\n"
+    "  if (u_fog.x != 0) {\n"
+    "    int z = int(clamp((1.0 - gl_FragCoord.z) * 16777216.0, 0.0, 16777215.0));\n"
+    "    float ze = u_fog.y == 0 ? u_fogf.x * 16777216.0 / float(u_fog.z - (z >> u_fog.w)) : u_fogf.x * float(z) / 16777216.0;\n"
+    "    if (u_fog_range[0].z != 0.0) {\n"
+    "      float t = clamp(abs(gl_FragCoord.x * u_fog_range[0].x + u_fog_range[0].y) / 32.0 - 1.0, -1.0, 9.0);\n"
+    "      int lo = int(floor(t)), hi = min(lo + 1, 9);\n"
+    "      float kl = lo < 0 ? 1.0 : u_fog_range[(lo + 4) >> 2][lo & 3];\n"
+    "      float kh = u_fog_range[(hi + 4) >> 2][hi & 3];\n"
+    "      ze /= max(mix(kl, kh, t - float(lo)), 1.0 / 256.0);\n"
+    "    }\n"
+    "    float f = clamp(ze - u_fogf.y, 0.0, 1.0);\n"
+    "    if (u_fog.x == 4) f = 1.0 - exp2(-8.0 * f);\n"
+    "    else if (u_fog.x == 5) f = 1.0 - exp2(-8.0 * f * f);\n"
+    "    else if (u_fog.x == 6) f = exp2(-8.0 * (1.0 - f));\n"
+    "    else if (u_fog.x == 7) f = exp2(-8.0 * (1.0 - f) * (1.0 - f));\n"
+    "    last.rgb = mix(last.rgb, u_fog_color.rgb, floor(f * 256.0 + 0.5) / 256.0);\n"
+    "  }\n"
     "  o_color = last;\n"
     "}\n";
 
 static GLuint sProgram, sVao, sVbo, sIbo, sXfUbo;
-static GLint uNumStages, uCin, uAin, uCop, uAop, uMap, uSel, uReg, uKonst, uSwap, uAlpha, uAlphaRef;
+static GLint uNumStages, uCin, uAin, uCop, uAop, uMap, uSel, uReg, uKonst, uSwap, uAlpha, uAlphaRef, uFog, uFogF, uFogColor;
+static GLint uInd, uIndCmd, uIndStage, uIndMtx, uTcSize, uFogRange;
 
 static GLuint compile(GLenum type, const char* src) {
     GLuint s = p_glCreateShader(type);
@@ -413,6 +489,15 @@ static void build_program(void) {
     uSwap = p_glGetUniformLocation(sProgram, "u_swap");
     uAlpha = p_glGetUniformLocation(sProgram, "u_alpha");
     uAlphaRef = p_glGetUniformLocation(sProgram, "u_alpha_ref");
+    uFog = p_glGetUniformLocation(sProgram, "u_fog");
+    uFogF = p_glGetUniformLocation(sProgram, "u_fogf");
+    uFogColor = p_glGetUniformLocation(sProgram, "u_fog_color");
+    uInd = p_glGetUniformLocation(sProgram, "u_ind");
+    uIndCmd = p_glGetUniformLocation(sProgram, "u_ind_cmd");
+    uIndStage = p_glGetUniformLocation(sProgram, "u_ind_stage");
+    uIndMtx = p_glGetUniformLocation(sProgram, "u_ind_mtx");
+    uTcSize = p_glGetUniformLocation(sProgram, "u_tc_size");
+    uFogRange = p_glGetUniformLocation(sProgram, "u_fog_range");
 
     p_glGenVertexArrays(1, &sVao);
     p_glBindVertexArray(sVao);
@@ -1096,10 +1181,12 @@ static const GLenum kDepthFunc[8] = {GL_NEVER, GL_GREATER, GL_EQUAL, GL_GEQUAL, 
 /* Sets everything a draw needs but its XF state and vertices. */
 static void apply_draw_state(const GXDrawState* st) {
     static GLint lcin[64], lain[64], lcop[64], laop[64], lmap[64], lsel[64], lswap[16], lalpha[4];
-    static GLfloat lreg[16], lkonst[16], laref[4];
+    static GLfloat lreg[16], lkonst[16], laref[4], lfogf[4], lfogc[4];
+    static GLint lfog[4];
     static int sUniformsSet, lstages;
     GLint cin[64], ain[64], cop[64], aop[64], map[64], sel[64], swap[16], alpha[4];
-    GLfloat reg[16], konst[16], aref[4];
+    GLfloat reg[16], konst[16], aref[4], fogf[4], fogc[4];
+    GLint fog[4];
     int i, all = !sGl.valid;
     sMsDirty = 1;
     if (all) {
@@ -1128,7 +1215,8 @@ static void apply_draw_state(const GXDrawState* st) {
         map[4 * i + 0] = s->texmap;
         map[4 * i + 1] = s->texcoord;
         map[4 * i + 2] = s->tex_enable;
-        map[4 * i + 3] = s->channel == 7 ? 7 : (s->channel & 1);
+        /* (The bump alphas, 5 and 6, with an indirect stage to give them.) */
+        map[4 * i + 3] = s->channel == 7 || (st->ind_any && (s->channel == 5 || s->channel == 6)) ? s->channel : (s->channel & 1);
         sel[4 * i + 0] = s->color_dest;
         sel[4 * i + 1] = s->alpha_dest;
         sel[4 * i + 2] = s->kcolor_sel | (s->kalpha_sel << 5);
@@ -1149,6 +1237,17 @@ static void apply_draw_state(const GXDrawState* st) {
     aref[0] = (float)st->alpha_ref[0];
     aref[1] = (float)st->alpha_ref[1];
     aref[2] = aref[3] = 0;
+    fog[0] = st->fog_type;
+    fog[1] = st->fog_ortho;
+    fog[2] = st->fog_b_mag;
+    fog[3] = st->fog_b_shift;
+    fogf[0] = st->fog_a;
+    fogf[1] = st->fog_c;
+    fogf[2] = fogf[3] = 0;
+    fogc[0] = st->fog_color[0];
+    fogc[1] = st->fog_color[1];
+    fogc[2] = st->fog_color[2];
+    fogc[3] = 1;
 
     if (!sUniformsSet || lstages != st->num_stages) {
         p_glUniform1i(uNumStages, st->num_stages);
@@ -1166,6 +1265,54 @@ static void apply_draw_state(const GXDrawState* st) {
     UNIFORM_IF_CHANGED(p_glUniform4iv, uSwap, 4, swap, lswap);
     UNIFORM_IF_CHANGED(p_glUniform4iv, uAlpha, 1, alpha, lalpha);
     UNIFORM_IF_CHANGED(p_glUniform4fv, uAlphaRef, 1, aref, laref);
+    UNIFORM_IF_CHANGED(p_glUniform4iv, uFog, 1, fog, lfog);
+    UNIFORM_IF_CHANGED(p_glUniform4fv, uFogF, 1, fogf, lfogf);
+    UNIFORM_IF_CHANGED(p_glUniform4fv, uFogColor, 1, fogc, lfogc);
+    {
+        static GLfloat lrange[16];
+        GLfloat range[16] = {0};
+        if (st->fog_range) {
+            range[0] = (GLfloat)(1.0 / sScaleX);
+            range[1] = -st->fog_center;
+            range[2] = 1;
+            for (i = 0; i < 10; i++) range[4 + i] = st->fog_k[i];
+        }
+        UNIFORM_IF_CHANGED(p_glUniform4fv, uFogRange, 4, range, lrange);
+    }
+    {
+        static GLint lind[4], lcmd[16], lstage[16], lmtx[24], lsize[16];
+        GLint ind[4] = {0}, cmd[16] = {0}, istage[16] = {0}, mtx[24] = {0}, size[16] = {0};
+        if (st->ind_any) {
+            int k;
+            ind[0] = st->ind_stages;
+            ind[1] = 1;
+            for (i = 0; i < st->num_stages; i++) cmd[i] = (GLint)st->ind_cmd[i];
+            for (i = 0; i < 4; i++) {
+                istage[4 * i] = st->ind_map[i];
+                istage[4 * i + 1] = st->ind_coord[i];
+                istage[4 * i + 2] = st->ind_scale[i][0];
+                istage[4 * i + 3] = st->ind_scale[i][1];
+            }
+            for (i = 0; i < 3; i++) {
+                for (k = 0; k < 3; k++) {
+                    mtx[8 * i + k] = st->ind_mtx[i][0][k];
+                    mtx[8 * i + 4 + k] = st->ind_mtx[i][1][k];
+                }
+                mtx[8 * i + 3] = mtx[8 * i + 7] = 17 - st->ind_mtx_scale[i];
+            }
+            for (i = 0; i < 8; i++) {
+                size[2 * i] = st->tc_size[i][0];
+                size[2 * i + 1] = st->tc_size[i][1];
+            }
+        }
+        UNIFORM_IF_CHANGED(p_glUniform4iv, uInd, 1, ind, lind);
+        if (st->ind_any) {
+            UNIFORM_IF_CHANGED(p_glUniform4iv, uIndCmd, 4, cmd, lcmd);
+            UNIFORM_IF_CHANGED(p_glUniform4iv, uIndStage, 4, istage, lstage);
+            UNIFORM_IF_CHANGED(p_glUniform4iv, uIndMtx, 6, mtx, lmtx);
+            UNIFORM_IF_CHANGED(p_glUniform4iv, uTcSize, 4, size, lsize);
+        }
+    }
     sUniformsSet = 1;
 
     for (i = 0; i < 8; i++) {
@@ -1395,6 +1542,21 @@ static int gl_copy_target(uint32_t addr, int w, int h) {
 
 static uint32_t gl_copy_texture(int target) { return sTargets[target].tex; }
 
+/* The copy's texture read back (gx_frames.c's write backs). */
+static uint8_t* gl_copy_read(int target, int* w, int* h) {
+    CopyTarget* t = &sTargets[target];
+    uint8_t* out;
+    gl_forget();
+    *w = GLX(t->w);
+    *h = GLY(t->h);
+    out = (uint8_t*)malloc((size_t)*w * *h * 4);
+    if (!out) return NULL;
+    glBindTexture(GL_TEXTURE_2D, t->tex);
+    glPixelStorei(GL_PACK_ALIGNMENT, 4);
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, out);
+    return out;
+}
+
 /* Draws the EFB rectangle into the copy's texture. */
 static void gl_copy(int target, int x, int y, int w, int h, int fmt, int intensity, int efb_alpha) {
     CopyTarget* t = &sTargets[target];
@@ -1593,5 +1755,6 @@ static int gl_present(int x, int y, int cw, int ch, int may_drop) {
 const GXDevice g_gl_device = {
     "OpenGL",       gl_init,       gl_texture,     gl_texture_update, gl_texture_delete, gl_draw,
     gl_frame_data,  gl_draw_recorded, gl_clear,    gl_copy_target,    gl_copy_texture,   gl_copy,
-    gl_present,     gl_apply_settings, gl_scale,   gl_msaa,
+    gl_present,     gl_apply_settings, gl_scale,   gl_msaa,          NULL,              NULL,
+    NULL,           NULL,          gl_copy_read,
 };

@@ -32,7 +32,7 @@ void (*g_host_pad_rumble)(int chan, int on);
 enum {
     WPAD_LEFT = 0x0001, WPAD_RIGHT = 0x0002, WPAD_DOWN = 0x0004, WPAD_UP = 0x0008,
     WPAD_PLUS = 0x0010, WPAD_2 = 0x0100, WPAD_1 = 0x0200, WPAD_B = 0x0400,
-    WPAD_A = 0x0800, WPAD_MINUS = 0x1000, WPAD_HOME = 0x8000,
+    WPAD_A = 0x0800, WPAD_MINUS = 0x1000,
 };
 
 /* One g in the accelerometer's units, as calibrated on a typical remote. */
@@ -49,10 +49,6 @@ static struct {
 
 static uint32_t sReports;
 int (*g_host_script_input)(uint32_t held);
-
-/* SparkPark: the buttons remote 0 held at its last read (HOST_PAD_*),
- * scripted ones included, for holding + to skip a movie (hle_game.c). */
-uint32_t g_wpad0_held;
 static int sConnecting, sConnected;
 
 static int connected(int32_t chan) { return chan == 0 && sConnected; }
@@ -119,6 +115,12 @@ static uint32_t script_held(void) {
     return held;
 }
 
+/* What was held at the last read, HOME among it: it never reaches the game
+ * as a button, but changes the camera (hle_camera.c). */
+static uint32_t sHeld;
+
+uint32_t hle_wpad_held(void) { return sHeld; }
+
 /* Held sideways, d-pad on the left: the remote's UP points left on screen,
  * RIGHT points up. */
 static uint16_t wpad_buttons(uint32_t held) {
@@ -128,7 +130,6 @@ static uint16_t wpad_buttons(uint32_t held) {
         {HOST_PAD_A, WPAD_A},             {HOST_PAD_B, WPAD_B},
         {HOST_PAD_1, WPAD_1},             {HOST_PAD_2, WPAD_2},
         {HOST_PAD_PLUS, WPAD_PLUS},       {HOST_PAD_MINUS, WPAD_MINUS},
-        {HOST_PAD_HOME, WPAD_HOME},
     };
     uint16_t b = 0;
     size_t i;
@@ -136,6 +137,17 @@ static uint16_t wpad_buttons(uint32_t held) {
         if (held & kMap[i].host) b |= kMap[i].wpad;
     }
     return b;
+}
+
+/* Whether the remote is being shaken: while either shake key is held, and
+ * for a few swings after one is pressed, so a tap is a whole shake. */
+#define TAP_REPORTS (4 * SWING_REPORTS)
+static int shaking(uint32_t held) {
+    static uint32_t last, until;
+    uint32_t keys = held & (HOST_PAD_SHAKE | HOST_PAD_SHAKE2);
+    if (keys & ~last) until = sReports + TAP_REPORTS;
+    last = keys;
+    return keys || (int32_t)(until - sReports) > 0;
 }
 
 /* Reports go to the sampling callback, like the Bluetooth stack's receive
@@ -225,17 +237,19 @@ void f_802488A0(ppc_t* c) {
     if (on && chan == 0) {
         uint32_t scripted = script_held();
         if (!g_host_script_input || !g_host_script_input(scripted)) held |= scripted;
-        g_wpad0_held = held;
+        if (hle_password_press()) held |= HOST_PAD_2;
+        sHeld = held;
     }
     if (on && chan == 0 && (motion = hle_motion(held, sReports, acc, dots)) != 0) {
         /* In minigames, the remote's motion as each asks (hle_motion.c). */
         ax = acc[0];
         ay = acc[1];
         az = acc[2];
-    } else if (held & (HOST_PAD_SHAKE | HOST_PAD_SHAKE2)) {
-        /* Swing along the remote's length, which is left-right on screen
-         * held sideways: +-2.5 g, about 17 times a second. */
-        ay = (sReports / SWING_REPORTS) & 1 ? ACC_ONE_G * 5 / 2 : -ACC_ONE_G * 5 / 2;
+    } else if (on && chan == 0 && shaking(held)) {
+        /* Iron Tail: a shake up and down, out of the remote's face (KPAD's
+         * y, which is what the park's scripts read; along its length they
+         * saw nothing), +-2.5 g about 17 times a second. */
+        az += (sReports / SWING_REPORTS) & 1 ? ACC_ONE_G * 5 / 2 : -ACC_ONE_G * 5 / 2;
     }
     memset(MA(st), 0, 0x2A);
     ST16(st + 0x00, wpad_buttons(held));

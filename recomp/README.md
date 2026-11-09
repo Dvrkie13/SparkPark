@@ -131,9 +131,14 @@ default:
 | B | recenter the camera | V / Left Ctrl | Y / right trigger |
 | (none) | turn the camera | mouse | |
 | + / - | | P / M | Start / Back |
-| HOME | | Home / H | right stick click |
-| shake | Iron Tail | Q / Left Shift (hold) | LB (hold) |
+| (none) | first person | Home / H | right stick click |
+| shake | Iron Tail (in battles) | Q, Left Shift or E | LB or RB |
 | shake, in minigames | (Bulbasaur's dash and the like) | Q and E by turns | LB and RB by turns |
+
+In first person (`hle_camera.c`, the game's own camera, entered on the
+Wii by pointing at the screen and pressing B) the right stick and mouse
+look around, and - takes a Photo. The click leaves it again, as does any
+other button but + and -.
 
 **Minigames** (`hle_motion.c`) get the remote held and moved as their
 instructions ask, from the same keys:
@@ -144,7 +149,8 @@ instructions ask, from the same keys:
 | Venusaur's Vine Swing, Tangrowth's Swing-Along | held upright; swing: Q, E by turns, in time; jump: 2 (Space) | LB, RB; A |
 | Blaziken's Boulder Bash | held upright; bat swing: 1 or 2 (left click, Space); recover: Q, E by turns | X or A; LB, RB |
 | Gyarados' Aqua Dash, Empoleon's Snow Slide | steer: left/right (A/D) | left stick |
-| Pelipper's Circle Circuit, Salamence's Air Race, Rhyperior's Bumper Burn | steer: left/right; climb/dive: up/down (W tilts back) | left stick |
+| Pelipper's Circle Circuit, Salamence's Air Race | steer: left/right; climb/dive: up/down (W tilts back) | left stick |
+| Rhyperior's Bumper Burn | roll: up/down/left/right (W tilts forward) | left stick |
 | Rayquaza's Balloon Panic | as flying, then the pointer: mouse | left stick; right stick |
 | Rotom's Spooky Shoot-'em-Up | pointer: mouse | right stick |
 | Bastiodon's Panel Crush | buttons, as on the Wii | |
@@ -458,8 +464,8 @@ What is different from Windows:
   so no Keyboard section in Options.
 - **Controls:** a controller, bound in Options as on Windows, or controls
   on the touch screen, drawn over the game while it was touched last: a
-  stick on the left, 2, 1, A, B, Shake and Shake 2 on the right, - and +
-  at the top left (no HOME); dragging elsewhere turns the camera. A tap on the Pad's Options tab, or the save file screen's
+  stick on the left, 2, 1, A, B, Shake and Shake 2 on the right, -, + and
+  View (first person) at the top left; dragging elsewhere turns the camera. A tap on the Pad's Options tab, or the save file screen's
   Options button (or -, there), opens Options, which taps then work; a
   tap off the book closes it. Touch controls (first in Controller) off
   never shows them, for a controller alone; taps still work Options.

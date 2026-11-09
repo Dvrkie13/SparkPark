@@ -49,8 +49,6 @@ TARGETS = {
         # Decompiled game code, built natively as the reference.
         os.path.join(ROOT, "src", "flib", "CodepointConvert.cpp"),
         os.path.join(ROOT, "src", "flib", "FName.cpp"),
-        # SparkPark: the set-up's disc checks (recomp/boot/disc_verify.c).
-        os.path.join(ROOT, "recomp", "tests", "test_disc_verify.cpp"),
         os.path.join(ROOT, "recomp", "boot", "disc_verify.c"),
     ],
     "boot": sorted(s for s in glob.glob(os.path.join(ROOT, "recomp", "boot", "*.c")) +

@@ -4,7 +4,7 @@
  * it, pointing it. Here those lines are replaced, as the game looks them
  * up, by ones that say what to press (hle_motion.c gives the remote's
  * motion for it), on the keyboard or the controller, whichever was used
- * last. Buttons are shown with the game's own button tags, which
+ * last. So is Primeape's, at the Meeting Place, on using Iron Tail. Buttons are shown with the game's own button tags, which
  * hle_prompts.c draws as the keys or controller buttons bound to them.
  * The movement and shake keys are named instead: the d-pad's glyph, four
  * keys in a cross, is too small to read in a sentence, and the shake keys
@@ -34,15 +34,21 @@ void hle_text_boot_setup(void) {
     ST32(0x80003110, sBase); /* MEM1 arena end */
 }
 
+/* The password screen's Unlock all button says this (hle_pause.c). */
+static const char kIncorrect[] = "Password is incorrect!";
+
 /* In the new text: [A] [B] [1] [2] are those buttons' glyphs; [up]
- * [down] [left] [right] the movement keys' names, and [shake] the two
- * shake keys'. Each replaces the message at index whose text begins with
- * was (Lobby.bmg's messages, checked so that no other file's are
- * replaced): key on the keyboard, pad (if different) on the controller. */
+ * [down] [left] [right] the movement keys' names, [shake] the two shake
+ * keys' ("Q and E"), [either shake] the same with "or", and [box] the tag
+ * that the field's messages begin with (a message box's, 8 bytes; it is
+ * passed over in matching). Each replaces the message at index whose text
+ * begins with was (checked so that no other file's are replaced): key on
+ * the keyboard, pad (if different) on the controller. */
 static const struct {
     int index;
     const char *was, *key, *pad;
 } kText[] = {
+    {17, kIncorrect, "All passwords entered!", NULL},
     /* Absol's Hurdle Bounce */
     {20, "Shake the Wii Remote", "Press [shake] by turns\nto start running. The faster you\npress them, the faster you'll go!"},
     {23, "Once you've cleared the final hurdle,",
@@ -94,6 +100,10 @@ static const struct {
      "Push the left stick up to fly higher\nor down to fly lower."},
     /* Bulbasaur's Daring Dash */
     {111, "Shake the Wii Remote", "Press [shake] by turns\nto start running. The faster you\npress them, the faster you'll go!"},
+    /* Primeape, having taught Iron Tail (the Meeting Place's
+     * Ar02Zn01Dat.dac, message 0x150001F4) */
+    {51, "You can use Iron Tail in battle.",
+     "[box]You can use Iron Tail in battle.\nPress [either shake], and you will\ndeliver a blow to the Pok\xe9mon\nin front of you!"},
 };
 #define TEXTS ((int)(sizeof(kText) / sizeof(kText[0])))
 
@@ -128,7 +138,7 @@ static void write_all(void) {
         {"[up]", HOST_PAD_SCREEN_UP}, {"[down]", HOST_PAD_SCREEN_DOWN},
         {"[left]", HOST_PAD_SCREEN_LEFT}, {"[right]", HOST_PAD_SCREEN_RIGHT},
     };
-    char shake[64], one[24], two[24];
+    char shake[64], either[64], one[24], two[24];
     /* The generation's low bit: the controller was used last (prompts.c). */
     int pad = g_host_prompt_generation ? (int)(g_host_prompt_generation() & 1) : 0, i;
     uint32_t at = sBase, end = sBase + TEXT_SIZE;
@@ -136,6 +146,8 @@ static void write_all(void) {
     button_name(HOST_PAD_SHAKE2, two, sizeof(two));
     if (*one && *two) snprintf(shake, sizeof(shake), "%s and %s", one, two);
     else snprintf(shake, sizeof(shake), "the shake buttons");
+    if (*one && *two) snprintf(either, sizeof(either), "%s or %s", one, two);
+    else snprintf(either, sizeof(either), "a shake button");
     for (i = 0; i < TEXTS; i++) {
         const char* s = pad && kText[i].pad ? kText[i].pad : kText[i].key;
         sAt[i] = at;
@@ -161,6 +173,15 @@ static void write_all(void) {
             } else if (!strncmp(s, "[shake]", 7)) {
                 at = put_str(at, end, shake);
                 s += 7;
+            } else if (!strncmp(s, "[either shake]", 14)) {
+                at = put_str(at, end, either);
+                s += 14;
+            } else if (!strncmp(s, "[box]", 5)) {
+                at = put(at, end, 0x1A);
+                at = put(at, end, 0x08FF);
+                at = put(at, end, 0x0000);
+                at = put(at, end, 0x0400);
+                s += 5;
             } else {
                 at = put(at, end, (uint8_t)*s++);
             }
@@ -174,8 +195,10 @@ static void write_all(void) {
     }
 }
 
-/* Whether the string at s (UTF-16) begins with prefix. */
+/* Whether the string at s (UTF-16) begins with prefix, after a tag if
+ * it begins with one. */
 static int begins(uint32_t s, const char* prefix) {
+    if (LD16(s) == 0x1A) s += LD8(s + 2);
     for (; *prefix; prefix++, s += 2) {
         if (LD16(s) != (uint8_t)*prefix) return 0;
     }
@@ -191,6 +214,7 @@ void f_801081C0(ppc_t* c) {
     if (!sBase || !c->r[3]) return;
     for (i = 0; i < TEXTS; i++) {
         if (kText[i].index != index || !begins(c->r[3], kText[i].was)) continue;
+        if (kText[i].was == kIncorrect && !hle_password_unlock_saying()) return;
         gen = g_host_prompt_generation ? g_host_prompt_generation() : 0;
         if (gen != sGeneration) {
             sGeneration = gen;

@@ -1,4 +1,5 @@
-/* SparkPark: the disc checks behind the set-up (see disc_verify.h). */
+/* The disc checks (disc_verify.h). The reasons given and reading dtk's
+ * output follow SparkPark (Dvrkie13/SparkPark, CC0). */
 #include "disc_verify.h"
 
 #include <ctype.h>
@@ -15,19 +16,18 @@ static const char* after(const char* out, const char* key) {
     return p;
 }
 
-/* Copies the run of hex digits at p, lowercased. */
-static void hex_at(const char* p, char* out, size_t n) {
-    size_t i = 0;
-    while (p && i + 1 < n && isxdigit((unsigned char)p[i])) {
-        out[i] = (char)tolower((unsigned char)p[i]);
-        i++;
+/* Whether the run of hex digits at p is want. */
+static int hex_is(const char* p, const char* want) {
+    size_t i, n = strlen(want);
+    if (!p) return 0;
+    for (i = 0; i < n; i++) {
+        if (tolower((unsigned char)p[i]) != want[i]) return 0;
     }
-    out[i] = '\0';
+    return !isxdigit((unsigned char)p[n]);
 }
 
 static const char* region_name(char c) {
     switch (c) {
-    case 'E': return "the USA release";
     case 'P': return "the European release";
     case 'J': return "the Japanese release";
     case 'K': return "the Korean release";
@@ -36,58 +36,90 @@ static const char* region_name(char c) {
     }
 }
 
-static int is_iso(const char* info) {
-    const char* f = after(info, "Format:");
-    return f && !strncmp(f, "ISO", 3);
-}
-
-disc_result disc_check_info(const char* info, const disc_file* file, char* msg, size_t n) {
-    const char* id = after(info, "Game ID:");
-    const char* rev = after(info, "Revision");
-    const char* lossless = after(info, "Lossless:");
-    if (!id || strlen(id) < 6) {
-        snprintf(msg, n, "That file couldn't be read as a disc image. Choose a disc image of PokePark Wii (USA): "
-                         "an ISO, RVZ, WBFS or the like.");
-        return DISC_UNREADABLE;
-    }
-    if (strncmp(id, "R8A", 3) != 0 || strncmp(id + 4, "01", 2) != 0) {
-        snprintf(msg, n, "That disc is another game (%.6s), not PokePark Wii: Pikachu's Adventure (USA, R8AE01).", id);
+disc_result disc_check_id(const char* id, int revision, char* msg, size_t n) {
+    if (memcmp(id, "R8A", 3) != 0 || memcmp(id + 4, "01", 2) != 0) {
+        snprintf(msg, n, "That disc image is another game (%.6s), not PokePark Wii: Pikachu's Adventure (USA, R8AE01).",
+                 id);
         return DISC_WRONG_GAME;
     }
     if (id[3] != 'E') {
-        snprintf(msg, n, "That's %s of PokePark Wii (%.6s). SparkPark needs the USA release, R8AE01.",
-                 region_name(id[3]), id);
+        snprintf(msg, n, "That's %s of PokePark Wii (%.6s). This needs the USA release, R8AE01.", region_name(id[3]),
+                 id);
         return DISC_WRONG_REGION;
     }
-    if (!rev || atoi(rev) != 0) {
-        snprintf(msg, n, "That's revision %d of PokePark Wii (USA). SparkPark needs the first release, Rev 0.",
-                 rev ? atoi(rev) : -1);
+    if (revision != 0) {
+        snprintf(msg, n, "That's revision %d of PokePark Wii (USA). This needs the first release, revision 0.",
+                 revision);
         return DISC_WRONG_REVISION;
-    }
-    if ((file && is_iso(info) && !memcmp(file->magic200, "NKIT", 4)) || (lossless && !strncmp(lossless, "false", 5))) {
-        snprintf(msg, n, "That's an NKit or scrubbed image, not a full copy of the disc. Convert it back to a full "
-                         "ISO (NKit's \"Recover to ISO\"), or use an unmodified dump.");
-        return DISC_NKIT_SCRUBBED;
     }
     return DISC_OK;
 }
 
-disc_result disc_check_verify(const char* info, const char* verify, const disc_file* file, char* msg, size_t n) {
-    char sha1[48], crc[16];
-    hex_at(after(verify, "SHA-1 :"), sha1, sizeof(sha1));
-    hex_at(after(verify, "CRC32 :"), crc, sizeof(crc));
-    if (!sha1[0]) {
-        snprintf(msg, n, "The disc image couldn't be read through to the end. Is the file complete?");
+disc_result disc_check_info(const char* info, char* msg, size_t n) {
+    const char* id = after(info, "Game ID:");
+    const char* rev = after(info, "Revision");
+    if (!id || strlen(id) < 6) {
+        snprintf(msg, n, "That file couldn't be read as a disc image. Choose a disc image of PokePark Wii (USA): an "
+                         "ISO, RVZ, WBFS or the like.");
         return DISC_UNREADABLE;
     }
-    if (!strcmp(sha1, DISC_REDUMP_SHA1) && (!crc[0] || !strcmp(crc, DISC_REDUMP_CRC32))) return DISC_OK;
-    if (file && is_iso(info) && file->size != DISC_REDUMP_SIZE) {
-        snprintf(msg, n, "That image is %lld bytes; a full dump of the disc is %lld. It looks scrubbed, trimmed or "
-                         "NKit-compressed. Use an unmodified 1:1 dump.", file->size, DISC_REDUMP_SIZE);
-        return DISC_NKIT_SCRUBBED;
+    return disc_check_id(id, rev ? atoi(rev) : -1, msg, n);
+}
+
+disc_result disc_check_dol(const uint8_t* dol, size_t len, char* msg, size_t n) {
+    char sha1[41];
+    disc_sha1(dol, len, sha1);
+    if (!strcmp(sha1, DISC_MAIN_DOL_SHA1)) return DISC_OK;
+    snprintf(msg, n, "That disc image's game code isn't the original's: it has been patched or modded, and this can't "
+                     "run it. Use an unmodified copy of your disc.");
+    return DISC_WRONG_CODE;
+}
+
+int disc_is_original(const char* verify) {
+    const char* crc = after(verify, "CRC32 :");
+    return hex_is(after(verify, "SHA-1 :"), DISC_REDUMP_SHA1) && (!crc || hex_is(crc, DISC_REDUMP_CRC32));
+}
+
+/* SHA-1 (FIPS 180). */
+#define ROL(v, s) (((v) << (s)) | ((v) >> (32 - (s))))
+
+static void sha1_block(uint32_t h[5], const uint8_t* p) {
+    uint32_t w[80], a = h[0], b = h[1], c = h[2], d = h[3], e = h[4];
+    int i;
+    for (i = 0; i < 16; i++) {
+        w[i] = (uint32_t)p[i * 4] << 24 | (uint32_t)p[i * 4 + 1] << 16 | (uint32_t)p[i * 4 + 2] << 8 | p[i * 4 + 3];
     }
-    snprintf(msg, n, "That disc image is PokePark Wii (USA, Rev 0) but doesn't match the original disc "
-                     "(Redump): it has been modified, patched or had its padding scrubbed. Use an unmodified "
-                     "dump of your disc.");
-    return DISC_MODIFIED;
+    for (; i < 80; i++) w[i] = ROL(w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16], 1);
+    for (i = 0; i < 80; i++) {
+        uint32_t f = i < 20 ? ((b & c) | (~b & d)) + 0x5A827999u
+                   : i < 40 ? (b ^ c ^ d) + 0x6ED9EBA1u
+                   : i < 60 ? ((b & c) | (b & d) | (c & d)) + 0x8F1BBCDCu
+                            : (b ^ c ^ d) + 0xCA62C1D6u;
+        uint32_t t = ROL(a, 5) + f + e + w[i];
+        e = d;
+        d = c;
+        c = ROL(b, 30);
+        b = a;
+        a = t;
+    }
+    h[0] += a;
+    h[1] += b;
+    h[2] += c;
+    h[3] += d;
+    h[4] += e;
+}
+
+void disc_sha1(const uint8_t* data, size_t len, char out[41]) {
+    uint32_t h[5] = {0x67452301u, 0xEFCDAB89u, 0x98BADCFEu, 0x10325476u, 0xC3D2E1F0u};
+    uint8_t last[128];
+    uint64_t bits = (uint64_t)len * 8;
+    size_t left = len % 64, i, size = left < 56 ? 64 : 128;
+    for (i = 0; i + 64 <= len; i += 64) sha1_block(h, data + i);
+    memset(last, 0, sizeof(last));
+    if (left) memcpy(last, data + i, left);
+    last[left] = 0x80;
+    for (i = 0; i < 8; i++) last[size - 1 - i] = (uint8_t)(bits >> (i * 8));
+    sha1_block(h, last);
+    if (size == 128) sha1_block(h, last + 64);
+    for (i = 0; i < 5; i++) snprintf(out + i * 8, 9, "%08x", h[i]);
 }

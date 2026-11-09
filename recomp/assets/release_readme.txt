@@ -21,12 +21,15 @@ Settings
 - Renderer: Vulkan by default; OpenGL in Options > Display (from the
   next start). If Vulkan can't start, OpenGL is used.
 - Xbox-style controllers and keyboard and mouse are supported.
+- Updates: at start it asks GitHub whether a newer version is out, and
+  if so, Options > Display > Updates opens its download page. Turn the
+  Updates setting off to stop it asking.
 
 This is a beta
-Some things aren't done yet: some graphics effects (fog, indirect
-texturing and others), sound effects such as reverb, and the Wii
-Remote pointer and Nunchuk (the game doesn't need them). It has been
-tested on one PC so far, so problems on other hardware are likely.
+Some things aren't done yet: a few rare graphics effects, the Wii
+Remote speaker, and the Wii Remote pointer and Nunchuk (the game
+doesn't need them). It has been tested on one PC so far, so problems
+on other hardware are likely.
 
 Reporting problems: open an issue on the project's GitHub page. Say
 what you did and what happened, attach a screenshot if you can, and
