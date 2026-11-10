@@ -11,9 +11,12 @@ SparkPark is a fork of
 **[PokePark Wiicompiled](https://github.com/MildRain479/PokePark-Wiicompiled)
 by MildRain479** (CC0), which did the recompilation, the runtime and nearly
 everything described below. SparkPark adds a one-time builder that checks
-your disc and builds the game on your PC with one button, plus a full disc
-check. Planned: a right-stick camera/pointer toggle and filling some of
-upstream's gaps. See [Credits](#credits).
+your disc and builds the game on your PC with one button, safe updates
+(a one-click rebuild that backs up your saves first), and a few
+quality-of-life additions: pausing in the background, holding + to skip a
+movie, an FPS counter and screenshots. Planned: a right-stick
+camera/pointer toggle, texture packs, Steam Deck/Linux, a mod loader and
+Android. See [Credits](#credits).
 
 SparkPark is unofficial. It is not affiliated with or endorsed by Nintendo,
 Creatures Inc., GAME FREAK inc. or The Pokémon Company.
@@ -23,9 +26,10 @@ SparkPark never distributes any: no disc files, and no recompiled or
 compiled game code. You need your own copy of the game: the USA release,
 **R8AE01, Rev 0**, as a full 1:1 dump. SparkPark checks it against the
 original disc's Redump hash (SHA-1
-`c9a6f7601fd54b5e21a0909084839d30874a9a37`) and tells you why if it
-doesn't match: wrong region, wrong revision, NKit or scrubbed, or
-modified. The game is recompiled and built on your PC, from your disc.
+`c9a6f7601fd54b5e21a0909084839d30874a9a37`). Another game, region or
+revision, or a patched copy, is refused with the reason. A WBFS or
+scrubbed copy gets a warning you can continue past, as those usually play
+fine. The game is recompiled and built on your PC, from your disc.
 
 > **Alpha.** The download from [Releases](../../releases) is the one-time
 > builder, not the game: it contains no game code, and SparkPark never
@@ -33,19 +37,37 @@ modified. The game is recompiled and built on your PC, from your disc.
 
 ## Playing on Windows
 
-1. Download `SparkPark-v0.2.0-alpha.zip` from [Releases](../../releases)
-   and unzip it anywhere.
+1. Download the latest `SparkPark-v…-alpha.zip` from
+   [Releases](../../releases) and unzip it anywhere.
 2. Run `SparkPark.exe`.
 3. **Upload ISO:** choose your disc image (ISO, RVZ, WBFS, WIA, CISO and
    the like). It's checked against the original disc (Redump, R8AE01
-   Rev 0); if it doesn't match, you're told why: wrong region or revision,
-   NKit or scrubbed, or modified.
+   Rev 0). Another game, region or revision, or a patched copy, is
+   refused with the reason. A WBFS or scrubbed copy gets a warning you can
+   build past (Esc or B picks another image instead).
 4. **Build Recomp:** the builder extracts your disc, recompiles the game
    code and builds the game with the compiler bundled in the zip (no Visual
    Studio needed). About a minute on a fast PC, a few on a slower one.
 5. **Play.** From then on `SparkPark.exe` goes straight into the game
    (hold Shift while starting it, or run `SparkPark.exe --rebuild`, to see
    the builder again).
+
+### Updating
+
+Unzip the new version (anywhere, or over the old folder) and run its
+`SparkPark.exe`. It finds the game the older version built and offers
+**Rebuild**: one click, from the disc files already extracted, so your
+disc image isn't needed. Before rebuilding, your saves and settings are
+copied to `backups\<date and time>` (the newest 10 are kept). **Restore a
+save backup**, at the bottom of the builder, puts one back. Your saves are
+never deleted.
+
+The game also checks SparkPark's GitHub releases at start, and the save
+files screen says when a newer one is out. Options > Display > Updates
+opens the release page or turns the check off. Nothing is downloaded by
+itself.
+
+### Where things are kept
 
 The game, your saves and settings are kept in `%LOCALAPPDATA%\SparkPark`
 (or in a `data` folder beside `SparkPark.exe` if you put an empty
@@ -54,7 +76,8 @@ it. The zip's `README.txt` has the details.
 
 **Requirements:** Windows 10 or 11 (64-bit), the Microsoft Edge WebView2
 Runtime (part of Windows 11 and almost every Windows 10 PC), a graphics
-card with OpenGL 3.3, and about 2.5 GB of free disk space (0.4 GB for the
+card with Vulkan 1.3 (or OpenGL 3.3, used if Vulkan can't start), and about
+2.5 GB of free disk space (0.4 GB for the
 unzipped builder, about 2 GB for the game it builds).
 
 ## Android
@@ -121,10 +144,11 @@ Optional changes to the game's balance, all off (100%) by default:
   immediately and are saved in `settings.ini`.
 - **Unlock all passwords.** One button on the Password screen gives that
   save file what all seven passwords give, and the game saves it.
-- **Update check.** At start it asks GitHub whether a newer release is
-  out. If one is, the save files screen says so, and Options > Display >
-  Updates opens its download page. Nothing is downloaded by itself, and
-  the Updates setting turns the check off.
+- **Update check.** At start it asks GitHub whether a newer SparkPark
+  release is out (SparkPark's own releases, never upstream's). If one is,
+  the save files screen says so, and Options > Display > Updates opens its
+  release page. Nothing is downloaded by itself, and the Updates setting
+  turns the check off.
 - Runs at 60 Hz to match PC displays (the Wii runs at 59.94 Hz).
 - **Pauses in the background** (SparkPark). While another window is in
   front, the game stops, its sound goes quiet and it takes no input, then
@@ -182,23 +206,20 @@ releases it, and a click captures it again.
 
 ## Known issues
 
-SparkPark (v0.2.0-alpha):
+SparkPark (v0.3.0-alpha):
 
 - **Tested on one PC so far.** Builds on slower PCs will take longer;
   please report how long yours took.
-- **v0.2.0-alpha is OpenGL only.** Its builder's runtime was built without
-  the Vulkan renderer. The next release has Vulkan (the default), which is
-  about three times lighter on the CPU (see `docs/PERFORMANCE.md`).
 - **From a USB hard drive the disc check is slow** (it reads the whole
   image: about 2 minutes at 40 MB/s; the caption shows its progress). Copy
   the image to an SSD first for a faster start.
 - **"Would you like to choose this Picture?"** starts on No: press left
   (d-pad, left stick or the arrow keys) before confirming.
 - **The game window takes focus when it opens**, so anything you're typing
-  elsewhere at that moment goes to the game. In v0.2.0-alpha a connected
-  controller's buttons also count while the window is in the background
-  (upstream's behavior); from the next release the game pauses there
-  instead.
+  elsewhere at that moment goes to the game. (While another window is in
+  front, the game pauses and takes no input.)
+- **Photos taken before upstream v0.1.1** (SparkPark v0.2.0-alpha and
+  earlier) stay scrambled in the album; new photos are fine.
 - **Entering a minigame with `RECOMP_ATTRACTION`** (a test switch) crashes
   on an early save, in upstream too. Playing the minigames normally isn't
   affected.

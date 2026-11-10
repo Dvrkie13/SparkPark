@@ -4,15 +4,28 @@ SparkPark is a fork of [PokePark Wiicompiled](https://github.com/MildRain479/Pok
 
 This changelog lists what SparkPark adds on top. SparkPark never distributes game data or code built from it: its download is a builder that makes the game on the player's PC from their own disc.
 
-## Unreleased
+## v0.3.0-alpha — 2026-11-09
 
-Roadmap Batch 1: profiling, Vulkan, and quality-of-life settings. Measurements are in `docs/PERFORMANCE.md`.
+Everything upstream has through **PokePark Wiicompiled v0.1.4-beta**, delivered through SparkPark's builder, plus safe updating and roadmap Batch 1. Measurements are in `docs/PERFORMANCE.md`.
+
+### From upstream (merged, not re-implemented)
+- **v0.1.1-beta:** fog; indirect texturing (both renderers: Gyarados' Aqua Dash's water ripples and refracts); the game's own audio effects mixed in, reverb among them; in-game photos saved correctly (photos taken before this stay scrambled); an update check (SparkPark points it at its own releases, below).
+- **v0.1.2-beta:** first-person view on HOME (right-stick click, Home / H), looked around with the right stick or mouse, `-` taking a photo; Rhyperior's Bumper Burn up/down fixed; a disc image check (SparkPark's builder now uses it, below).
+- **v0.1.3-beta:** stutter fixes (the game thread kept on the fastest core, no stalls on blur effects, shader compiles or graphics-memory growth); the title screen's "Please Press" shows the key or button bound to 2.
+- **v0.1.4-beta:** an "Unlock all passwords" button on the password screen; Iron Tail from either shake key, and Primeape's tip naming them. Its dual-screen PokéPark Pad is Android-only: not in the Windows builder.
 
 ### Added
+- **Rebuild on update.** When a new version finds a game an older one built, the builder opens on **Rebuild**. It works from the disc files already extracted (checked complete, `main.dol` checked), so no disc image is needed; if they're missing, it asks for the disc again. `build.json` now records the image, its hash and the check's result.
+- **Save backups.** Before any build over a save, the save (`game\R8AE01\nand`) and `settings.ini` are copied to `backups\<date_time>`; the newest 10 are kept. **Restore a save backup** on the builder page puts one back, backing up the current save first. Saves are never deleted.
+- **One disc check for every platform** (upstream's `disc_verify.c`): another game, region or revision is refused with the reason; a WBFS or scrubbed image gets a warning the player can build past or go back from (Esc / B); a patched `main.dol` is refused after extracting.
+- **SparkPark's version** in one place (`recomp/runtime/sparkpark_version.h`), for the builder and the update check.
+
+### Roadmap Batch 1
 - **Profiling for developers:**
-  - `docs/PERFORMANCE.md`: how to measure (upstream's `RECOMP_FPS` and `RECOMP_PROFILE`), the baseline, and before/after numbers for each change.
-  - `SPARKPARK_DEBUG_INFO=1` gives the player-path build symbols for the profiler.
-  - The profiler's split now counts the indirect-call lookup, the paired-single helpers and the FIFO decoder's loops in their kind.
+- **Profiling for developers:**
+    - `docs/PERFORMANCE.md`: how to measure (upstream's `RECOMP_FPS` and `RECOMP_PROFILE`), the baseline, and before/after numbers for each change.
+    - `SPARKPARK_DEBUG_INFO=1` gives the player-path build symbols for the profiler.
+    - The profiler's split now counts the indirect-call lookup, the paired-single helpers and the FIFO decoder's loops in their kind.
 - **Vulkan in the builder's runtime.** `build_player.py runtime` builds upstream's Vulkan renderer in when the Vulkan SDK is present. It compiles SparkPark's shaders to SPIR-V on the developer side; players need no SDK.
   - In the park it cuts the CPU's work per frame from about 24 ms to about 7 ms, and holds 60 fps where OpenGL managed about 36.
   - `builder/package.py stage` refuses an OpenGL-only runtime unless `--opengl-only` is given.
@@ -25,7 +38,12 @@ Roadmap Batch 1: profiling, Vulkan, and quality-of-life settings. Measurements a
 - **F12 screenshots,** saved as PNG in `Pictures\SparkPark` without the counter or the skip bar.
 
 ### Changed
+- **The update check** (upstream's) asks SparkPark's own releases, pre-releases included, never upstream's (whose releases hold a program with game code in it). It still only opens the release page; nothing is downloaded.
 - The game clock's pause (`ppc_timebase_pause`) now works on Windows too, not only Android.
+- The player build links `winhttp` (the update check).
+
+### Removed
+- SparkPark's own `disc_verify.c` and `recomp/tests/test_disc_verify.cpp`, replaced by upstream's check (which credits SparkPark's) and its tests.
 
 ## v0.2.0-alpha — 2026-11-04
 

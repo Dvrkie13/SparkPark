@@ -1,4 +1,4 @@
-SparkPark v0.2.0-alpha: components and their licenses
+SparkPark v0.3.0-alpha: components and their licenses
 =====================================================
 
 Every component in this folder, where it is, and its license. The full

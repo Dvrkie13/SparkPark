@@ -1,4 +1,4 @@
-SparkPark v0.2.0-alpha
+SparkPark v0.3.0-alpha
 ======================
 
 SparkPark is an unofficial PC recompilation of PokePark Wii: Pikachu's
@@ -29,8 +29,10 @@ How to play
 1. Unzip this folder anywhere.
 2. Run SparkPark.exe.
 3. Upload ISO: choose your disc image. SparkPark checks it against the
-   original disc (Redump). If it doesn't match, it tells you why: wrong
-   region, wrong revision, NKit or scrubbed, or modified.
+   original disc (Redump). Another game, region or revision, or a patched
+   copy, is refused, and it tells you why. A WBFS or scrubbed copy gets a
+   warning: build anyway (it usually plays fine), or press Esc / B to pick
+   another image.
    From a USB hard drive the check can take a couple of minutes (it reads
    the whole image); from an SSD it takes seconds.
 4. Build Recomp: SparkPark extracts the disc, recompiles the game code and
@@ -41,6 +43,22 @@ From then on, SparkPark.exe goes straight into the game.
 To run the builder again (for example with another disc image), start
 SparkPark.exe while holding Shift, or run "SparkPark.exe --rebuild".
 
+Updating from an earlier SparkPark
+----------------------------------
+Unzip the new version (anywhere, or over the old folder) and run its
+SparkPark.exe. It finds the game the old version built and offers Rebuild:
+one click, from the disc files already extracted, so your disc image isn't
+needed. Before rebuilding, your saves and settings are copied to
+backups\<date and time> in the data folder below (the newest 10 are kept).
+"Restore a save backup", at the bottom of the builder, puts one back.
+If you used portable.txt, unzip the new version over the old folder, so it
+finds the data folder there.
+
+The game checks SparkPark's GitHub releases at start and says on the save
+file screen when a newer one is out; Options > Display > Updates opens the
+page or turns the check off. Nothing is downloaded by itself.
+
+
 Controls: keyboard and mouse or an Xbox-style controller. The builder works
 with the mouse, Enter/Space or the controller's A button. In the game,
 Options are in the pause menu (the PokePark Pad) and on the save file screen.
@@ -50,6 +68,8 @@ Keys in the game:
   F3          frame rate counter on or off
   F12         screenshot, saved in Pictures\SparkPark
   hold +      skip a movie (+ is P or the controller's Start by default)
+  Home / H    first person (right-stick click on a controller); - takes a
+              photo there
 The game pauses while another window is in front (Options > Display >
 Pause in background).
 
@@ -60,7 +80,8 @@ Where your game and saves are kept
   game\SparkParkGame.exe   the game, built on your PC
   game\R8AE01\             the files from your disc; your saves are in nand\
   game\settings.ini        your settings
-  build.json               says the build is complete
+  build.json               says the build is complete, and by which version
+  backups\                 copies of your saves, made before each rebuild
   logs\build.log           what the builder did (look here if a build fails)
 
 To keep everything beside SparkPark.exe instead (for example on another
@@ -79,10 +100,13 @@ Known issues (alpha)
 --------------------
 - Tested on one PC so far. Please report problems on GitHub:
   https://github.com/Dvrkie13/SparkPark/issues
-- From the game port: no fog, indirect texturing, dynamic lighting, logic
-  ops, z-textures, or lines and points yet; no reverb; the Wii Remote
-  speaker is silent; the pointer works only in Rayquaza's and Rotom's
-  minigames; no Nunchuk.
+- From the game port: no logic ops, z-textures, or lines and points yet;
+  the Wii Remote speaker is silent; the pointer works only in Rayquaza's
+  and Rotom's minigames and first person; no Nunchuk.
+- Photos taken before upstream v0.1.1 (SparkPark v0.2.0 and earlier) stay
+  scrambled in the album; new photos are fine.
+- "Would you like to choose this Picture?" starts on No: press left before
+  confirming.
 - The game window takes focus when it opens.
 
 
