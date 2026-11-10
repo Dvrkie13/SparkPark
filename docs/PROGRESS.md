@@ -344,3 +344,35 @@ On branch `merge-upstream-0.1.4` (not pushed).
 **Notes**
 - On Windows the dual-screen Pad isn't reachable: there's no Dual screen tab. Upstream's developer switch `RECOMP_GX_SECOND` can still draw it off-screen for frame dumps.
 - "Would you like to choose this Picture?" still starts on No (Batch 1's fix, not done yet).
+
+## 2026-11-09: v0.3.0-alpha, phase 2: controls
+
+**Decided:** Batch 1 (already on `main`) ships in v0.3.0-alpha.
+
+**Every binding after the merge** (defaults; all rebindable in Options, two slots each)
+
+| Wii Remote | Action | Keyboard / mouse | Controller |
+|---|---|---|---|
+| D-pad | Move | WASD / arrows | D-pad, left stick (always) |
+| 2 | Jump, talk, confirm | Space / X | A |
+| 1 | Dash, back | Left click / Z | X |
+| A | Thunderbolt | Right click / Enter | B |
+| B | Recenter camera | V / Left Ctrl | Y / RT |
+| + | PokéPark Pad; hold to skip a movie | P | Start |
+| − | Map; Options on the save file screen; photo in first person; Unlock all on the password screen | M | Back |
+| HOME | First-person view (upstream v0.1.2) | Home / H | Right-stick click |
+| Shake | Iron Tail; minigame running/swinging | Q / Left Shift | LB |
+| Shake 2 | The minigames' other shake | E | RB |
+| (camera / pointer) | Turn the camera; aim in Rayquaza's and Rotom's minigames and first person | Mouse | Right stick |
+
+**Fixed keys** (not rebindable):
+- **Alt+Enter:** fullscreen.
+- **F3:** FPS counter. **F12:** screenshot.
+- **Esc:** releases the mouse; a click captures it again.
+- **In the Options tab:** arrows, Enter, Esc, Delete / Y (clear a binding).
+- **In the builder:** Enter/Space/A for the button, Esc/B to go back after a disc warning.
+- **Developer builds only:** Backspace or Back+Start opens the debug menu.
+
+**Unbound by default:** controller LT and left-stick click; keyboard Tab, Caps Lock, middle mouse button, most letters and F-keys.
+
+**Camera/pointer toggle (decided by the owner):** left-stick click and the middle mouse button. Written into CLAUDE.md; not implemented yet.
