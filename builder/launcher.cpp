@@ -29,7 +29,8 @@
 // Test hooks (environment, for unattended runs): SPARKPARK_TEST_ISO (skip the file picker),
 // SPARKPARK_AUTOPRESS=<ms> (press the button when each state settles), SPARKPARK_SHOTS=<dir>
 // (save a PNG of each state), SPARKPARK_NO_LAUNCH=1 (Play closes instead of starting the game),
-// SPARKPARK_TEST_FAIL=compile (point the build at a missing compiler, to see a failed build).
+// SPARKPARK_TEST_FAIL=compile (point the build at a missing compiler, to see a failed build),
+// SPARKPARK_TEST_RESTORE=<backup folder> ("Restore a save backup" takes it without asking).
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
@@ -308,7 +309,7 @@ static void verify_thread(std::wstring iso) {
         // scrubbed copies leave out the disc's padding, and usually play fine. main.dol is
         // checked after extracting; a patched one is refused then.
         log_line("disc differs from the original (WBFS, scrubbed or the like); the player may build anyway");
-        post(R"({"type":"verified","warn":"Not an exact copy of the disc (WBFS or scrubbed?). It usually plays fine: build, or press Esc to pick another."})");
+        post(R"({"type":"verified","warn":"Not an exact copy of the disc (WBFS or scrubbed?). Usually fine: build, or Esc for another."})");
     }
     gBusy = false;
 }
@@ -362,22 +363,26 @@ static fs::path backup_save(const std::string& reason) {
 // then the backup's nand and settings.ini replace the current ones.
 static void restore_backup() {
     std::error_code ec;
-    ComPtr<IFileOpenDialog> dlg;
-    if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dlg)))) return;
-    DWORD opts = 0;
-    dlg->GetOptions(&opts);
-    dlg->SetOptions(opts | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST);
-    dlg->SetTitle(L"Choose a save backup to restore (a folder named by its date and time)");
-    ComPtr<IShellItem> folder;
-    fs::create_directories(backups_dir(), ec);
-    if (SUCCEEDED(SHCreateItemFromParsingName(backups_dir().c_str(), nullptr, IID_PPV_ARGS(&folder))))
-        dlg->SetFolder(folder.Get());
-    if (FAILED(dlg->Show(gWnd))) return;
-    ComPtr<IShellItem> item;
-    PWSTR picked = nullptr;
-    if (FAILED(dlg->GetResult(&item)) || FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &picked))) return;
-    fs::path src = picked;
-    CoTaskMemFree(picked);
+    fs::path src = env(L"SPARKPARK_TEST_RESTORE");  // test runs: this backup, without asking
+    const bool test = !src.empty();
+    if (!test) {
+        ComPtr<IFileOpenDialog> dlg;
+        if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dlg)))) return;
+        DWORD opts = 0;
+        dlg->GetOptions(&opts);
+        dlg->SetOptions(opts | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST);
+        dlg->SetTitle(L"Choose a save backup to restore (a folder named by its date and time)");
+        ComPtr<IShellItem> folder;
+        fs::create_directories(backups_dir(), ec);
+        if (SUCCEEDED(SHCreateItemFromParsingName(backups_dir().c_str(), nullptr, IID_PPV_ARGS(&folder))))
+            dlg->SetFolder(folder.Get());
+        if (FAILED(dlg->Show(gWnd))) return;
+        ComPtr<IShellItem> item;
+        PWSTR picked = nullptr;
+        if (FAILED(dlg->GetResult(&item)) || FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &picked))) return;
+        src = picked;
+        CoTaskMemFree(picked);
+    }
     if (!fs::exists(src / "nand")) {
         MessageBoxW(gWnd, L"That folder isn't a SparkPark save backup (it has no nand folder).", L"SparkPark",
                     MB_ICONWARNING);
@@ -385,7 +390,7 @@ static void restore_backup() {
     }
     std::wstring ask = L"Replace your current save and settings with the backup from " + src.filename().wstring() +
                        L"?\n\nYour current save is backed up first, so this can be undone.";
-    if (MessageBoxW(gWnd, ask.c_str(), L"SparkPark", MB_YESNO | MB_ICONQUESTION) != IDYES) return;
+    if (!test && MessageBoxW(gWnd, ask.c_str(), L"SparkPark", MB_YESNO | MB_ICONQUESTION) != IDYES) return;
     const fs::path game = gHome / "game", nand = game / "R8AE01" / "nand";
     backup_save("before restoring " + narrow(src.filename().wstring()));
     fs::path tmp = game / "R8AE01" / "nand.restoring";
@@ -639,8 +644,10 @@ static void screenshot(const std::wstring& name) {
     if (dir.empty() || taken[name]) return;
     taken[name] = true;
     std::thread([name] {
-        // Let the state's animations play in first (the sign rises in 1.2 s; captions pop in).
-        Sleep(name == L"upload" ? 2600 : 900);
+        // Let the state's animations play in first (the sign rises in 1.2 s, then the logo and
+        // the button pop in; captions pop in).
+        static const ULONGLONG start = GetTickCount64();
+        Sleep(GetTickCount64() - start < 3000 || name == L"upload" ? 2600 : 900);
         PostMessageW(gWnd, WM_APP_POST, 1, (LPARAM) new std::wstring(name));
     }).detach();
 }
@@ -809,6 +816,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR args, int) {
                     std::wstring press = env(L"SPARKPARK_AUTOPRESS");
                     if (!press.empty())
                         gView->AddScriptToExecuteOnDocumentCreated((L"window.SP_AUTOPRESS=" + std::to_wstring(_wtoi(press.c_str())) + L";").c_str(), nullptr);
+                    if (!env(L"SPARKPARK_TEST_RESTORE").empty())
+                        gView->AddScriptToExecuteOnDocumentCreated(L"window.SP_TEST_RESTORE=1;", nullptr);
                     EventRegistrationToken tok;
                     gView->add_WebMessageReceived(Callback<ICoreWebView2WebMessageReceivedEventHandler>(
                         [](ICoreWebView2*, ICoreWebView2WebMessageReceivedEventArgs* a) -> HRESULT {

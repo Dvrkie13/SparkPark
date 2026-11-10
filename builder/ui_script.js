@@ -72,6 +72,8 @@
     if(m.type==='init'){
       backups=m.backups||0;
       if(m.update){update={from:m.from,to:m.to,fromExtracted:!!m.fromExtracted};phase=m.fromExtracted?'build':'upload';}
+      // Test runs (SPARKPARK_TEST_RESTORE): press "Restore a save backup" once the page has settled.
+      if(window.SP_TEST_RESTORE&&backups>0)setTimeout(function(){restore.click();},3500);
     }
     else if(m.type==='verifying'){phase='verifying';error='';note='';warn='';retry=false;vpct=-1;}
     else if(m.type==='verifyProgress'){vpct=m.pct;$('caption').textContent='Checking your disc… '+vpct+'%';if(vpct>=50)send({cmd:'state',name:'verifying-half'});return;}
