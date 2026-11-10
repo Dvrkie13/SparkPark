@@ -376,3 +376,23 @@ On branch `merge-upstream-0.1.4` (not pushed).
 **Unbound by default:** controller LT and left-stick click; keyboard Tab, Caps Lock, middle mouse button, most letters and F-keys.
 
 **Camera/pointer toggle (decided by the owner):** left-stick click and the middle mouse button. Written into CLAUDE.md; not implemented yet.
+
+## 2026-11-09: v0.3.0-alpha, phase 3: release
+
+**Done**
+- README, CHANGELOG (v0.3.0-alpha) and the zip's README.txt/NOTICES.txt updated (`8e26aba`).
+- Release zip built from `8e26aba`: `SparkPark-v0.3.0-alpha.zip`, 93,793,943 bytes, 3,517 files, sha256 `b97e8b6b…bd95b28d0`.
+- **Audit PASS:** 0 game code, 0 disc data. The report is in `D:\SparkPark-build\release-0.3.0\audit\`.
+- `main` fast-forwarded to the merge branch and pushed (`4b3ecbc..8e26aba`).
+- Only the `v0.3.0-alpha` tag pushed, never `--tags`. The fork's tags are `v0.1.0-alpha`, `v0.2.0-alpha` and `v0.3.0-alpha`.
+- **Published [SparkPark v0.3.0-alpha](https://github.com/Dvrkie13/SparkPark/releases/tag/v0.3.0-alpha)** as a pre-release, with the owner-approved notes (`D:\SparkPark-build\release-0.3.0\v0.3.0-alpha-notes.md`).
+- **Checked as a visitor:**
+  - The public API shows prerelease=true, draft=false, and **1 asset**, the zip, with GitHub's digest matching the audited sha256.
+  - A fresh download is byte-identical.
+  - The page has nothing else but GitHub's automatic "Source code" archives.
+  - SparkPark's update check now sees `v0.3.0-alpha` as the newest release.
+
+**Next**
+- The camera/pointer toggle (left-stick click, middle mouse button) and the right stick as a pointer.
+- The rest of Batch 1's list in CLAUDE.md: the Picture prompt starting on Yes, not taking focus at start, rolling daily backups.
+- The `RECOMP_ATTRACTION` early-save crash, which blocks checking Aqua Dash's indirect texturing and Rhyperior's controls in tests.

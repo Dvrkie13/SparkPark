@@ -15,7 +15,8 @@ This is a follow-up to the owner's earlier recomp project (Re-Punch!!, Punch-Out
 ## Release status
 
 - **v0.1.0-alpha:** source-only pre-release (rebrand, Redump verification, docs, build.py guard).
-- **v0.2.0-alpha (current):** first playable release. The asset is `SparkPark-v0.2.0-alpha.zip`, the one-time builder (WebView2 UI, llvm-mingw, embedded Python, a prebuilt runtime with no game code). It builds into `%LOCALAPPDATA%\SparkPark`, needs about 2.5 GB, and took 54 s to build on an 8-core desktop. OpenGL only. Tested on one PC.
+- **v0.2.0-alpha:** first playable release. The asset is `SparkPark-v0.2.0-alpha.zip`, the one-time builder (WebView2 UI, llvm-mingw, embedded Python, a prebuilt runtime with no game code). It builds into `%LOCALAPPDATA%\SparkPark`, needs about 2.5 GB, and took 54 s to build on an 8-core desktop. OpenGL only. Tested on one PC.
+- **v0.3.0-alpha (current, 2026-11-09):** upstream merged through v0.1.4-beta; the update check on SparkPark's releases; rebuild on update from the extracted disc, with save backups and Restore; one disc check (upstream's `disc_verify.c`); roadmap Batch 1 (Vulkan default, widescreen setting, pause in background, hold + to skip movies, F3 / F12). The zip is 93.8 MB, the only uploaded asset.
 - Known issues listed at v0.2 that SparkPark owns: OpenGL only; the "Would you like to choose this Picture?" prompt starts on No; the game window takes focus on open; a controller's buttons register while the window is in the background.
 - Release notes always include: upstream credit, how to play, requirements, known issues, coming next, and the unofficial / bring-your-own-disc / don't-share-built-files notices. Mention roadmap items under "Coming next".
 
@@ -215,5 +216,5 @@ Do the batches in order. Within a batch, measure before and after each change. E
 - Upstream's stutter fixes (v0.1.3) were tested on an Android handheld. Profile them on Windows in Batch 1 before assuming the same gains.
 - Android: **decided, SparkPark will support it** (see "Mobile platforms"). Until that work starts, leave upstream's Android code untouched.
 - iOS: on hold. It needs a Mac for building and signing.
-- Vulkan SDK isn't installed on the dev machine yet, so builds are OpenGL-only for now (handled in roadmap Batch 1).
+- Vulkan SDK 1.4.363.1 is installed at `D:\VulkanSDK` (since Batch 1); release packaging refuses an OpenGL-only runtime.
 - Player builds go to `%LOCALAPPDATA%\SparkPark`, which is usually on C:. That's fine for players, but consider letting the builder choose the location (some players, like the dev, are low on C: space).
