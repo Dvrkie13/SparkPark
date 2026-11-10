@@ -280,3 +280,67 @@ Numbers and methods: `docs/PERFORMANCE.md`.
 - Release notes and a version bump for the next release, after the owner's OK.
 - Batch 2 (graphics options). Several items in it are already upstream's (scale, MSAA, the Vulkan pipeline cache), so it's mostly FXAA and settings polish.
 - The `RECOMP_ATTRACTION` crash on early saves, if attraction profiling is wanted.
+
+## 2026-11-09: v0.3.0-alpha, phase 1: upstream v0.1.4-beta merged, update check, rebuild on update, backups
+
+On branch `merge-upstream-0.1.4` (not pushed).
+
+**Merge**
+- `git fetch upstream --no-tags`, merged `9b5804e` (v0.1.4-beta): 37 commits, 46 files. `20debaf`, a later README-only commit, is not included.
+- Eight files conflicted. All resolutions are listed in the merge commit (`d686354`):
+  - **`disc_verify.c/.h`:** upstream's version, which credits SparkPark's.
+  - **`import_win32.c`:** upstream's, with SparkPark's texts re-applied.
+  - **`host_settings.h`, `settings.c`:** both sides' settings kept.
+  - **`hle_wpad.c`:** upstream's `hle_wpad_held()` replaces our `g_wpad0_held`.
+  - **`vk_backend.c`:** upstream's second screen and our HUD both kept.
+  - **`build.py`:** upstream's test list.
+  - **`README.md`:** our builder steps and Android note, upstream's known issues.
+- Built with MSVC and llvm-mingw. Unit tests: 2,814,756 checks, 0 failures.
+
+**SparkPark changes**
+- **Update check** (upstream's `update.c`):
+  - It now asks `Dvrkie13/SparkPark`'s releases, pre-releases included (`releases/latest` skips them).
+  - It compares with `SPARKPARK_VERSION` ("0.3.0-alpha", `recomp/runtime/sparkpark_version.h`), which the builder uses too.
+  - It still only opens the page and never downloads anything. Upstream's `version.h` is untouched.
+- **One disc check** (upstream's `disc_verify.c`, the same code as Android):
+  - another game, region or revision is refused with the reason;
+  - an image that isn't Redump's gets an amber warning; build anyway, or Esc / B to pick another;
+  - a patched `main.dol` is refused after extracting.
+- **Rebuild on update:**
+  - When `build.json` is from another version, the builder opens on Rebuild, from the extracted disc files (byte count and `main.dol` checked), with no disc needed.
+  - If those files are missing, it asks for the disc again.
+  - v0.2.0's `build.json` doesn't record the image's path, so the extracted files are the only way to make it one click.
+- **Save backups:** before any build over a save, `nand` and `settings.ini` go to `backups\<date_time>` (newest 10 kept). "Restore a save backup" on the page backs up the current save first.
+- `build_player.py` links `winhttp`.
+
+**Checked** (screenshots in `D:\SparkPark-build\v03\shots`, test installs in `D:\SparkPark-build\v03`)
+- **Disc check on the owner's ISO:** original (Redump), 127 s. An altered copy got:
+  - a changed byte near the end: the warning;
+  - R8AP01: refused ("European release");
+  - revision 1: refused;
+  - RSPE01: refused ("another game");
+  - patched `main.dol`: refused after extracting.
+- **Zip:** 93.8 MB, 3,517 files. **Audit PASS:** 0 game code, 0 disc data. The runtime has 43 objects, `update` and `friends` among them.
+- **Through the launcher** (the test zip, the owner's ISO): build in 249 s.
+- **Title screen:** "Please Press" shows the bound key (Space).
+- **Update check:** "Update: v0.2.0" over Options when run as 0.1.0. The log says "the latest release is v0.2.0-alpha".
+- **Password screen:** an Unlock all button. `-` → "All passwords entered!" (the log: "passwords: file 0 unlocked").
+- **First person on HOME:** sights in the middle; HOME again leaves it. The mouse turns the camera (shown on the normal camera; first person and the mouse together not captured).
+- **Fog:** subtle in the opening forest (a little more haze).
+- **Upgrade from v0.2.0** (its release zip, a new save, v0.3.0 beside it on the same data folder):
+  - the rebuild was offered from the extracted disc;
+  - backup `2026-11-09_19-33-06` was made;
+  - the rebuild took 40 s;
+  - every save file's hash was unchanged;
+  - the rebuilt game shows "Game 1".
+  - Restore put a backup back after a change, and backed up the changed save first.
+
+**Not checked, and why**
+- **Indirect texturing** (Gyarados' Aqua Dash) and **Rhyperior's up/down:** `RECOMP_ATTRACTION` still crashes on an early save (`load_attraction_ranking`, upstream's), and no save that has reached them exists.
+- **A photo in the album:** on a new game `-` in first person saved nothing (the photo files hold only their headers). The camera likely comes later in the story.
+- **Iron Tail from either shake key, and Primeape's line:** Iron Tail is only in battles, and the line only appears after Primeape teaches it. Upstream checked it by what the scripts read.
+- **Reverb:** upstream: "No area tested so far turns an effect on."
+
+**Notes**
+- On Windows the dual-screen Pad isn't reachable: there's no Dual screen tab. Upstream's developer switch `RECOMP_GX_SECOND` can still draw it off-screen for frame dumps.
+- "Would you like to choose this Picture?" still starts on No (Batch 1's fix, not done yet).
